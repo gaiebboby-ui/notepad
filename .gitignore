@@ -5,6 +5,7 @@ bin
 build/bin
 build/temp*
 build/*.zip
+release-temp/
 build/CodeLite/*.mk
 build/CodeLite/*.txt
 build/CodeLite/*.json

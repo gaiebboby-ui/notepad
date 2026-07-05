@@ -1,25 +1,28 @@
 > [!Note]
 > [v25.07r5738](https://github.com/zufuliu/notepad4/releases/tag/v25.07r5738) and later no longer supports Windows XP, Windows Server 2003 (see issue #974) and Windows 8/8.1 on ARM32 (Windows RT) (see issue #1023), use [v25.06r5696](https://github.com/zufuliu/notepad4/releases/tag/v25.06r5696) instead.
 
-## Unreleased (this fork)
+## v26.06r6196 (fork)
 
-See [doc/FORK-CHANGES.md](FORK-CHANGES.md) for details.
+**Release:** https://github.com/gaiebboby-ui/notepad/releases/tag/v26.06r6196  
+**Asset:** `Notepad_i18n_x64_v26.06r6196.zip` — MSVC x64, Windows 10/11, all locales.
+
+See [doc/FORK-CHANGES.md](FORK-CHANGES.md) for differences from upstream Notepad4.
 
 ### Added
 * **Preview Mode** — Markdown (md4c GFM), HTML, XML, CSV; split view, splitter, maximize; Ctrl+wheel zoom; context menu; `NotepadPreview.log`
 * **Dark theme** — `Notepad DarkTheme.ini`, `DarkMode` shell integration, dark preview scrollbars
 * **Toolbar** — Preview Mode button (custom icon, before Close); default scale 173%
 
-### Fixed
-* Locale CI build (`Notepad4_zh-Hans_` MSBuild target)
-* CI/AppVeyor artifact names (`Notepad_*.zip`)
-* MinGW: md4c linked for preview support
-* Preview: re-entrancy hang, context menu coordinates, md4c cdecl / project integration
+### Product rename (vs Notepad4)
+* `Notepad.exe`, `Notepad.ini`, `Notepad DarkTheme.ini`, `Notepad_*.zip`
 
 ### Settings (`Notepad.ini`)
 * `PreviewMode`, `PreviewAuto`, `PreviewHeightPercent`, `PreviewMaximized`, `PreviewZoomPercent`
 
-## Changes Since
+---
+
+## Unreleased
+
 * Scintilla updated to 5, see https://www.scintilla.org/ScintillaHistory.html for the changes.
 * Lexer and API updates: .
 * Other bug fixes and improvements.
