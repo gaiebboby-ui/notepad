@@ -14,6 +14,16 @@
 #include <mshtmcid.h>
 #include <exdisp.h>
 #include <mshtml.h>
+
+#ifndef DISPID_BEFORENAVIGATE2
+#define DISPID_BEFORENAVIGATE2	250
+#endif
+#ifndef DISPID_NEWWINDOW2
+#define DISPID_NEWWINDOW2		259
+#endif
+#ifndef DISPID_NEWWINDOW3
+#define DISPID_NEWWINDOW3		273
+#endif
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -53,7 +63,7 @@ extern HWND hwndEdit;
 #define NP2_COUNTOF(ar) (sizeof(ar) / sizeof((ar)[0]))
 #endif
 
-#define PREVIEW_UPDATE_MS	400
+#define PREVIEW_LAYOUT_RETRY_MS	16
 #define PREVIEW_MAX_TEXT_BYTES	(2 * 1024 * 1024)
 #define PREVIEW_READY_TIMEOUT_MS	5000
 #define PREVIEW_SPLITTER_CY		5
@@ -88,6 +98,7 @@ PreviewOleSite *g_pOleSite = nullptr;
 bool g_active;
 bool g_autoEnable;
 bool g_dirty;
+unsigned g_dirtySerial;
 bool g_blankLoaded;
 bool g_updatePosted;
 bool g_inUpdate;
@@ -343,6 +354,189 @@ void OpenUrl(LPCWSTR url) noexcept {
 	ShellExecuteW(nullptr, L"open", url, nullptr, nullptr, SW_SHOWNORMAL);
 }
 
+bool IsAllowedPreviewNavigation(LPCWSTR url) noexcept {
+	if (url == nullptr || url[0] == L'\0') {
+		return true;
+	}
+	if (url[0] == L'#') {
+		return true;
+	}
+	if (_wcsicmp(url, L"about:blank") == 0) {
+		return true;
+	}
+	// In-document anchors on the preview shell (about:blank#section).
+	if (wcsncmp(url, L"about:blank", 11) == 0 && url[11] == L'#') {
+		return true;
+	}
+	return false;
+}
+
+void NotifyPreviewLinkCopied(LPCWSTR url) noexcept {
+	WCHAR display[200];
+	display[0] = L'\0';
+	if (url != nullptr && url[0] != L'\0') {
+		const size_t maxDisp = NP2_COUNTOF(display) - 4;
+		wcsncpy(display, url, maxDisp);
+		display[maxDisp] = L'\0';
+		if (wcslen(url) > maxDisp) {
+			wcscat(display, L"...");
+		}
+	}
+	WCHAR msg[280];
+	swprintf(msg, NP2_COUNTOF(msg), L"Link copied to clipboard\n%s", display);
+	ShowNotificationW(SC_NOTIFICATIONPOSITION_BOTTOMRIGHT, msg);
+}
+
+void HandlePreviewHyperlink(LPCWSTR url) noexcept {
+	if (url == nullptr || url[0] == L'\0') {
+		return;
+	}
+	const bool ctrlDown = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+	if (ctrlDown) {
+		OpenUrl(url);
+		return;
+	}
+	CopyTextToClipboard(g_hwndMain, url);
+	NotifyPreviewLinkCopied(url);
+}
+
+LPCWSTR DispParamBstr(const DISPPARAMS *params, UINT index) noexcept {
+	if (params == nullptr || index >= params->cArgs) {
+		return nullptr;
+	}
+	const VARIANT &v = params->rgvarg[index];
+	if (v.vt == VT_BSTR && v.bstrVal != nullptr) {
+		return v.bstrVal;
+	}
+	return nullptr;
+}
+
+void SetDispBoolRef(DISPPARAMS *params, UINT index, VARIANT_BOOL value) noexcept {
+	if (params == nullptr || index >= params->cArgs) {
+		return;
+	}
+	VARIANT &v = params->rgvarg[index];
+	if (v.vt == (VT_BYREF | VT_BOOL) && v.pboolVal != nullptr) {
+		*v.pboolVal = value;
+	}
+}
+
+void SetDispCancel(DISPPARAMS *params, VARIANT_BOOL cancel) noexcept {
+	SetDispBoolRef(params, 0, cancel);
+}
+
+class PreviewBrowserEvents final : public IDispatch {
+	ULONG m_ref = 1;
+
+public:
+	STDMETHODIMP QueryInterface(REFIID riid, void **ppv) noexcept override {
+		if (ppv == nullptr) {
+			return E_POINTER;
+		}
+		if (IsEqualIID(riid, IID_IUnknown) || IsEqualIID(riid, IID_IDispatch)) {
+			*ppv = static_cast<IDispatch *>(this);
+			AddRef();
+			return S_OK;
+		}
+		*ppv = nullptr;
+		return E_NOINTERFACE;
+	}
+	STDMETHODIMP_(ULONG) AddRef() noexcept override { return ++m_ref; }
+	STDMETHODIMP_(ULONG) Release() noexcept override {
+		const ULONG ref = --m_ref;
+		if (ref == 0) {
+			delete this;
+		}
+		return ref;
+	}
+	STDMETHODIMP GetTypeInfoCount(UINT *) noexcept override { return E_NOTIMPL; }
+	STDMETHODIMP GetTypeInfo(UINT, LCID, ITypeInfo **) noexcept override { return E_NOTIMPL; }
+	STDMETHODIMP GetIDsOfNames(REFIID, LPOLESTR *, UINT, LCID, DISPID *) noexcept override { return E_NOTIMPL; }
+	STDMETHODIMP Invoke(DISPID dispIdMember, REFIID, LCID, WORD wFlags,
+		DISPPARAMS *pDispParams, VARIANT *, EXCEPINFO *, UINT *) noexcept override {
+		if (!(wFlags & DISPATCH_METHOD) || pDispParams == nullptr) {
+			return S_OK;
+		}
+		if (dispIdMember == DISPID_BEFORENAVIGATE2 && pDispParams->cArgs >= 6) {
+			const LPCWSTR url = DispParamBstr(pDispParams, 5);
+			if (!IsAllowedPreviewNavigation(url)) {
+				SetDispCancel(pDispParams, VARIANT_TRUE);
+				HandlePreviewHyperlink(url);
+			}
+			return S_OK;
+		}
+		if (dispIdMember == DISPID_NEWWINDOW2 && pDispParams->cArgs >= 4) {
+			const LPCWSTR url = DispParamBstr(pDispParams, 0);
+			SetDispBoolRef(pDispParams, 3, VARIANT_TRUE);
+			if (url != nullptr && url[0] != L'\0' && !IsAllowedPreviewNavigation(url)) {
+				HandlePreviewHyperlink(url);
+			}
+			return S_OK;
+		}
+		if (dispIdMember == DISPID_NEWWINDOW3 && pDispParams->cArgs >= 7) {
+			const LPCWSTR url = DispParamBstr(pDispParams, 3);
+			SetDispBoolRef(pDispParams, 6, VARIANT_TRUE);
+			if (url != nullptr && url[0] != L'\0' && !IsAllowedPreviewNavigation(url)) {
+				HandlePreviewHyperlink(url);
+			}
+			return S_OK;
+		}
+		return S_OK;
+	}
+};
+
+IConnectionPoint *g_pBrowserEventsCP = nullptr;
+DWORD g_browserEventsCookie = 0;
+PreviewBrowserEvents *g_pBrowserEvents = nullptr;
+
+void DisconnectBrowserEvents() noexcept {
+	if (g_pBrowserEventsCP != nullptr && g_browserEventsCookie != 0) {
+		g_pBrowserEventsCP->Unadvise(g_browserEventsCookie);
+		g_browserEventsCookie = 0;
+	}
+	if (g_pBrowserEventsCP != nullptr) {
+		g_pBrowserEventsCP->Release();
+		g_pBrowserEventsCP = nullptr;
+	}
+	if (g_pBrowserEvents != nullptr) {
+		g_pBrowserEvents->Release();
+		g_pBrowserEvents = nullptr;
+	}
+}
+
+bool ConnectBrowserEvents() noexcept {
+	if (g_pBrowser == nullptr || g_pBrowserEventsCP != nullptr) {
+		return g_pBrowserEventsCP != nullptr;
+	}
+	IConnectionPointContainer *pCPC = nullptr;
+	HRESULT hr = g_pBrowser->QueryInterface(IID_IConnectionPointContainer, reinterpret_cast<void **>(&pCPC));
+	if (FAILED(hr) || pCPC == nullptr) {
+		PreviewMode_Log(L"ConnectBrowserEvents: no IConnectionPointContainer hr=0x%08lX", hr);
+		return false;
+	}
+	hr = pCPC->FindConnectionPoint(DIID_DWebBrowserEvents2, &g_pBrowserEventsCP);
+	pCPC->Release();
+	if (FAILED(hr) || g_pBrowserEventsCP == nullptr) {
+		PreviewMode_Log(L"ConnectBrowserEvents: FindConnectionPoint hr=0x%08lX", hr);
+		g_pBrowserEventsCP = nullptr;
+		return false;
+	}
+	g_pBrowserEvents = new PreviewBrowserEvents();
+	if (g_pBrowserEvents == nullptr) {
+		g_pBrowserEventsCP->Release();
+		g_pBrowserEventsCP = nullptr;
+		return false;
+	}
+	hr = g_pBrowserEventsCP->Advise(g_pBrowserEvents, &g_browserEventsCookie);
+	if (FAILED(hr)) {
+		PreviewMode_Log(L"ConnectBrowserEvents: Advise hr=0x%08lX", hr);
+		DisconnectBrowserEvents();
+		return false;
+	}
+	PreviewMode_Log(L"ConnectBrowserEvents: OK");
+	return true;
+}
+
 bool ShowPreviewContextMenu(DWORD dwID, POINT *ppt, IUnknown *pcmdtReserved, IDispatch *pdispObject, HWND hwndParent) noexcept {
 	if (ppt == nullptr || pcmdtReserved == nullptr) {
 		return false;
@@ -586,7 +780,7 @@ void AppendHtmlEscapedUtf8(const char *text, size_t len, LPWSTR &dst, size_t &re
 
 void AppendPreviewShell(LPWSTR &dst, size_t &remaining, LPCWSTR body, bool dark) noexcept {
 	static const WCHAR prefixLight[] =
-		L"<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>"
+		L"<!DOCTYPE html><html><head><meta charset=\"utf-8\"><base target=\"_self\"><style>"
 		L"body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;"
 		L"line-height:1.6;word-wrap:break-word;margin:16px 24px;color:#24292f;background:#fff;}"
 		L"h1,h2,h3,h4,h5,h6{margin-top:24px;margin-bottom:16px;font-weight:600;line-height:1.25;}"
@@ -609,7 +803,7 @@ void AppendPreviewShell(LPWSTR &dst, size_t &remaining, LPCWSTR body, bool dark)
 		L"::selection{background:#B3D4FC;}"
 		L"</style></head><body>";
 	static const WCHAR prefixDark[] =
-		L"<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>"
+		L"<!DOCTYPE html><html><head><meta charset=\"utf-8\"><base target=\"_self\"><style>"
 		L"body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;"
 		L"line-height:1.6;word-wrap:break-word;margin:16px 24px;color:#c9d1d9;background:#0d1117;}"
 		L"h1,h2,h3,h4,h5,h6{margin-top:24px;margin-bottom:16px;font-weight:600;line-height:1.25;color:#e6edf3;}"
@@ -881,6 +1075,7 @@ void SchedulePreviewUpdate() noexcept {
 void DestroyBrowser() noexcept {
 	PreviewMode_Log(L"DestroyBrowser begin");
 	g_blankLoaded = false;
+	DisconnectBrowserEvents();
 	if (g_pInPlaceObject) {
 		g_pInPlaceObject->InPlaceDeactivate();
 		g_pInPlaceObject->Release();
@@ -962,6 +1157,7 @@ bool EnsureBrowser() noexcept {
 	}
 	if (g_pBrowser) {
 		g_pBrowser->put_Silent(VARIANT_TRUE);
+		ConnectBrowserEvents();
 
 		PreviewMode_Log(L"EnsureBrowser: Navigate2 about:blank...");
 		const DWORD t2 = GetTickCount();
@@ -1093,10 +1289,12 @@ void UpdatePreviewContent() noexcept {
 		return;
 	}
 	g_inUpdate = true;
+	const unsigned serialAtStart = g_dirtySerial;
 	if (!EnsureBrowser()) {
 		PreviewMode_Log(L"UpdatePreviewContent: EnsureBrowser failed");
 		g_inUpdate = false;
 		g_dirty = true;
+		SetTimer(g_hwndMain, ID_PREVIEW_TIMER, PREVIEW_LAYOUT_RETRY_MS, nullptr);
 		return;
 	}
 
@@ -1130,8 +1328,12 @@ void UpdatePreviewContent() noexcept {
 
 	NP2HeapFree(html);
 	NP2HeapFree(text);
-	g_dirty = false;
 	g_inUpdate = false;
+	if (serialAtStart == g_dirtySerial) {
+		g_dirty = false;
+	} else {
+		SchedulePreviewUpdate();
+	}
 	PreviewMode_Log(L"UpdatePreviewContent leave");
 }
 
@@ -1643,7 +1845,8 @@ void PreviewMode_RequestUpdate() noexcept {
 		return;
 	}
 	g_dirty = true;
-	SetTimer(g_hwndMain, ID_PREVIEW_TIMER, PREVIEW_UPDATE_MS, nullptr);
+	++g_dirtySerial;
+	SchedulePreviewUpdate();
 }
 
 void PreviewMode_OnTimer() noexcept {
@@ -1667,14 +1870,18 @@ void PreviewMode_OnPostedUpdate() noexcept {
 		GetClientRect(g_hwndContainer, &rc);
 		if (rc.right <= 0 || rc.bottom <= 0) {
 			PreviewMode_Log(L"OnPostedUpdate: container zero size, retry timer");
-			SetTimer(g_hwndMain, ID_PREVIEW_TIMER, PREVIEW_UPDATE_MS, nullptr);
+			SetTimer(g_hwndMain, ID_PREVIEW_TIMER, PREVIEW_LAYOUT_RETRY_MS, nullptr);
 			return;
 		}
 	}
+	if (g_inUpdate) {
+		SchedulePreviewUpdate();
+		return;
+	}
 	UpdatePreviewContent();
 	if (g_dirty) {
-		PreviewMode_Log(L"OnPostedUpdate: still dirty, retry timer");
-		SetTimer(g_hwndMain, ID_PREVIEW_TIMER, PREVIEW_UPDATE_MS, nullptr);
+		PreviewMode_Log(L"OnPostedUpdate: still dirty, reschedule");
+		SchedulePreviewUpdate();
 	}
 	PreviewMode_Log(L"OnPostedUpdate leave");
 }
