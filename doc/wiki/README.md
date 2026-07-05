@@ -1,6 +1,6 @@
 # Notepad — local wiki mirror
 
-This folder documents **this fork** (product name **Notepad**, executable `Notepad.exe`).  
+This folder documents **this fork** — **Notepad** (`Notepad.exe`, `Notepad.ini`), a lightweight editor based on [Notepad4](https://github.com/zufuliu/notepad4).  
 Upstream wiki: https://github.com/zufuliu/notepad4/wiki
 
 | Page | Description |

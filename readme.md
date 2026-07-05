@@ -1,10 +1,10 @@
 # Notepad and matepath
 
-> **Fork note:** This build uses the product name **Notepad** (executable `Notepad.exe`, settings `Notepad.ini`) instead of upstream **Notepad4**. The project is still based on [zufuliu/notepad4](https://github.com/zufuliu/notepad4); internal source file names (`Notepad4.cpp`, etc.) are unchanged.
->
-> **Fork documentation:** [Preview Mode](doc/Preview-Mode.md) · [All fork changes](doc/FORK-CHANGES.md) · [Build](doc/wiki/Build-Notepad.md) · [CI/CD](doc/wiki/CI-CD.md)
+**Notepad** is a lightweight Scintilla-based text editor for Windows — a fork of [Notepad4](https://github.com/zufuliu/notepad4) (Notepad2⨯2 / Notepad2++). This repository builds **`Notepad.exe`** with settings in **`Notepad.ini`**, and adds [Preview Mode](doc/Preview-Mode.md), an improved dark theme, and other fork-specific changes ([full list](doc/FORK-CHANGES.md)).
 
-Notepad (Notepad2⨯2, Notepad2++) is a light-weight Scintilla based text editor for Windows with syntax highlighting, code folding, auto-completion and API list for many programming languages and documents, it's based on (rewritten in modern C++) Florian's [Notepad2](https://www.flos-freeware.ch/notepad2.html) and XhmikosR's [Notepad2-mod](https://xhmikosr.github.io/notepad2-mod/). matepath is a file browser plugin and based on (rewritten in modern C++) Florian's [metapath](https://www.flos-freeware.ch/archive.html).
+Syntax highlighting, code folding, auto-completion, and API lists cover many programming languages and document types. The editor descends from Florian's [Notepad2](https://www.flos-freeware.ch/notepad2.html) and XhmikosR's [Notepad2-mod](https://xhmikosr.github.io/notepad2-mod/) (rewritten in modern C++). **matepath** is the bundled file browser plugin, based on Florian's [metapath](https://www.flos-freeware.ch/archive.html).
+
+**Docs:** [Preview Mode](doc/Preview-Mode.md) · [Fork changes](doc/FORK-CHANGES.md) · [Build](doc/wiki/Build-Notepad.md) · [CI/CD](doc/wiki/CI-CD.md)
 
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](License.txt) [![Latest release](https://img.shields.io/github/release/zufuliu/notepad4.svg)](https://github.com/zufuliu/notepad4/releases) [![Downloads](https://img.shields.io/github/downloads/zufuliu/notepad4/total.svg)](https://github.com/zufuliu/notepad4/releases)
 

@@ -632,17 +632,7 @@ static inline void FindDarkThemeFile(LPWSTR lpszIniFile) noexcept {
 	// relative to program ini file
 	lstrcpy(lpszIniFile, szIniFile);
 	WCHAR * const filePart = PathFindFileName(lpszIniFile);
-	static const LPCWSTR kDarkThemeCandidates[] = {
-		L"Notepad DarkTheme.ini",
-		L"Notepad4 DarkTheme.ini",
-	};
-	for (LPCWSTR name : kDarkThemeCandidates) {
-		lstrcpy(filePart, name);
-		if (PathIsFile(lpszIniFile)) {
-			return;
-		}
-	}
-	lstrcpy(filePart, kDarkThemeCandidates[0]);
+	lstrcpy(filePart, L"Notepad DarkTheme.ini");
 }
 
 void Style_LoadTabSettings(LPCEDITLEXER pLex) noexcept {

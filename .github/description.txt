@@ -1,0 +1,2 @@
+# GitHub repository About field (Settings → General → Description)
+Lightweight Scintilla text editor for Windows — fork of Notepad4 (Notepad2⨯2). Syntax highlighting, code folding, auto-completion, live preview for Markdown/HTML/XML/CSV, dark theme, and matepath file browser.

@@ -6499,9 +6499,6 @@ void FindIniFile() noexcept {
 			appData[nameIndex] = L'\0';
 		}
 		lstrcpy(&source[nameIndex], L"Notepad DarkTheme.ini-default");
-		if (!PathIsFile(source)) {
-			lstrcpy(&source[nameIndex], L"Notepad4 DarkTheme.ini-default");
-		}
 		PathAppend(appData, L"Notepad DarkTheme.ini");
 		CopyFile(source, appData, TRUE);
 	}

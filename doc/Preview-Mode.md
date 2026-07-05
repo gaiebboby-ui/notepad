@@ -11,8 +11,6 @@ Live preview for Markdown, HTML, XML, and CSV in a split view inside Notepad.
    - Set `PreviewMode=1` in `Notepad.ini` and restart.
 3. Edit in the top pane; preview refreshes after a short delay (~400 ms).
 
-Sample document: [test-preview.md](../test-preview.md).
-
 ## Supported content
 
 | Scheme | Preview behavior |

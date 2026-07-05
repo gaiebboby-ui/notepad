@@ -42,8 +42,6 @@ Split editor view: source on top, live preview on bottom (Trident / MSHTML).
 
 **Debug log:** `NotepadPreview.log` next to the executable. Disable: set environment variable `NP2_PREVIEW_LOG=0`.
 
-**Test file:** [test-preview.md](../test-preview.md)
-
 **Sources:** `src/PreviewMode.cpp`, `src/PreviewMode.h`, `src/md4c/`
 
 ---
