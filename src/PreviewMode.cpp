@@ -121,6 +121,8 @@ int g_previewZoomPercent = PREVIEW_ZOOM_DEFAULT;
 
 bool g_splitterClassRegistered;
 
+HBRUSH g_previewContainerBrush;
+
 WCHAR g_previewLogPath[MAX_PATH];
 bool g_previewLogEnabled = true;
 
@@ -173,6 +175,7 @@ void PreviewMode_Log(LPCWSTR format, ...) noexcept {
 
 void ApplyPreviewZoom() noexcept;
 void ApplyPreviewBrowserChrome() noexcept;
+bool IsEditInputMessage(UINT msg, HWND hwndMsg) noexcept;
 
 void PreviewMode_InitLog() noexcept {
 	WCHAR exePath[MAX_PATH];
@@ -727,7 +730,8 @@ public:
 	}
 	STDMETHODIMP GetHostInfo(DOCHOSTUIINFO *pInfo) noexcept override {
 		if (pInfo) {
-			pInfo->dwFlags = DOCHOSTUIFLAG_DPI_AWARE | DOCHOSTUIFLAG_THEME | DOCHOSTUIFLAG_FLAT_SCROLLBAR;
+			pInfo->dwFlags = DOCHOSTUIFLAG_DPI_AWARE | DOCHOSTUIFLAG_THEME | DOCHOSTUIFLAG_FLAT_SCROLLBAR
+				| DOCHOSTUIFLAG_NO3DBORDER | DOCHOSTUIFLAG_NO3DOUTERBORDER;
 			pInfo->dwDoubleClick = DOCHOSTUIDBLCLK_DEFAULT;
 		}
 		return S_OK;
@@ -1025,6 +1029,16 @@ void PumpPendingMessages() noexcept {
 			PostQuitMessage(static_cast<int>(msg.wParam));
 			break;
 		}
+		// Defer preview updates while rendering to avoid re-entrant OnPostedUpdate
+		// clearing g_updatePosted / g_dirty before the in-flight render finishes.
+		if (g_inUpdate && msg.message == APPM_PREVIEW_UPDATE) {
+			PostMessage(msg.hwnd, msg.message, msg.wParam, msg.lParam);
+			continue;
+		}
+		if (g_inUpdate && IsEditInputMessage(msg.message, msg.hwnd)) {
+			PostMessage(msg.hwnd, msg.message, msg.wParam, msg.lParam);
+			continue;
+		}
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
 	}
@@ -1180,6 +1194,198 @@ bool EnsureBrowser() noexcept {
 	return ok;
 }
 
+bool WriteHtmlToDocument(IHTMLDocument2 *pHTML, LPCWSTR html) noexcept {
+	if (pHTML == nullptr || html == nullptr) {
+		return false;
+	}
+
+	SAFEARRAY *psa = SafeArrayCreateVector(VT_VARIANT, 0, 1);
+	if (psa == nullptr) {
+		PreviewMode_Log(L"WriteHtmlToDocument: SafeArrayCreate failed");
+		return false;
+	}
+	VARIANT *pVar = nullptr;
+	if (FAILED(SafeArrayAccessData(psa, reinterpret_cast<void **>(&pVar)))) {
+		SafeArrayDestroy(psa);
+		PreviewMode_Log(L"WriteHtmlToDocument: SafeArrayAccessData failed");
+		return false;
+	}
+	pVar->vt = VT_BSTR;
+	pVar->bstrVal = SysAllocString(html);
+	const bool allocFailed = (pVar->bstrVal == nullptr);
+	SafeArrayUnaccessData(psa);
+	if (allocFailed) {
+		SafeArrayDestroy(psa);
+		PreviewMode_Log(L"WriteHtmlToDocument: SysAllocString failed");
+		return false;
+	}
+
+	VARIANT optional[3];
+	for (int i = 0; i < 3; ++i) {
+		VariantInit(&optional[i]);
+		optional[i].vt = VT_ERROR;
+		optional[i].scode = DISP_E_PARAMNOTFOUND;
+	}
+
+	BSTR openUrl = SysAllocString(L"about:blank");
+	const HRESULT hrOpen = pHTML->open(openUrl, optional[0], optional[1], optional[2], nullptr);
+	SysFreeString(openUrl);
+	if (FAILED(hrOpen)) {
+		PreviewMode_Log(L"WriteHtmlToDocument: open hr=0x%08lX", hrOpen);
+		SafeArrayDestroy(psa);
+		return false;
+	}
+
+	const DWORD t0 = GetTickCount();
+	const HRESULT hrWrite = pHTML->write(psa);
+	const HRESULT hrClose = pHTML->close();
+	SafeArrayDestroy(psa);
+	PreviewMode_Log(L"WriteHtmlToDocument: write hr=0x%08lX close hr=0x%08lX (%lums)",
+		hrWrite, hrClose, GetTickCount() - t0);
+	return SUCCEEDED(hrWrite) && SUCCEEDED(hrClose);
+}
+
+struct PreviewScrollState {
+	long top = 0;
+	long left = 0;
+	long scrollHeight = 0;
+	long clientHeight = 0;
+	bool valid = false;
+};
+
+bool ReadPreviewScrollFromElement(IHTMLElement *pElem, PreviewScrollState &state) noexcept {
+	if (pElem == nullptr) {
+		return false;
+	}
+	IHTMLElement2 *pElem2 = nullptr;
+	const HRESULT hrQI = pElem->QueryInterface(IID_IHTMLElement2, reinterpret_cast<void **>(&pElem2));
+	pElem->Release();
+	if (FAILED(hrQI) || pElem2 == nullptr) {
+		return false;
+	}
+	long top = 0;
+	long left = 0;
+	long scrollHeight = 0;
+	long clientHeight = 0;
+	const bool ok = SUCCEEDED(pElem2->get_scrollTop(&top))
+		&& SUCCEEDED(pElem2->get_scrollLeft(&left))
+		&& SUCCEEDED(pElem2->get_scrollHeight(&scrollHeight))
+		&& SUCCEEDED(pElem2->get_clientHeight(&clientHeight));
+	pElem2->Release();
+	if (!ok) {
+		return false;
+	}
+	state.top = top;
+	state.left = left;
+	state.scrollHeight = scrollHeight;
+	state.clientHeight = clientHeight;
+	state.valid = true;
+	return true;
+}
+
+PreviewScrollState GetPreviewScrollState(IHTMLDocument2 *pDoc) noexcept {
+	PreviewScrollState state;
+	if (pDoc == nullptr) {
+		return state;
+	}
+	IHTMLDocument3 *pDoc3 = nullptr;
+	if (SUCCEEDED(pDoc->QueryInterface(IID_IHTMLDocument3, reinterpret_cast<void **>(&pDoc3)))) {
+		IHTMLElement *pElem = nullptr;
+		if (SUCCEEDED(pDoc3->get_documentElement(&pElem))) {
+			ReadPreviewScrollFromElement(pElem, state);
+		}
+		pDoc3->Release();
+	}
+	if (!state.valid) {
+		IHTMLElement *pElem = nullptr;
+		if (SUCCEEDED(pDoc->get_body(&pElem))) {
+			ReadPreviewScrollFromElement(pElem, state);
+		}
+	}
+	return state;
+}
+
+long ComputeRestoredScrollTop(const PreviewScrollState &saved, long newScrollHeight, long newClientHeight) noexcept {
+	const long oldRange = saved.scrollHeight - saved.clientHeight;
+	const long newRange = newScrollHeight - newClientHeight;
+	if (saved.top <= 0 || oldRange <= 0) {
+		return 0;
+	}
+	if (newRange <= 0) {
+		return 0;
+	}
+	if (saved.top >= oldRange) {
+		return newRange;
+	}
+	return static_cast<long>((static_cast<long long>(saved.top) * newRange) / oldRange);
+}
+
+void ApplyPreviewScrollToElement(IHTMLElement *pElem, const PreviewScrollState &saved) noexcept {
+	if (pElem == nullptr || !saved.valid) {
+		return;
+	}
+	IHTMLElement2 *pElem2 = nullptr;
+	const HRESULT hrQI = pElem->QueryInterface(IID_IHTMLElement2, reinterpret_cast<void **>(&pElem2));
+	pElem->Release();
+	if (FAILED(hrQI) || pElem2 == nullptr) {
+		return;
+	}
+	long scrollHeight = 0;
+	long clientHeight = 0;
+	if (SUCCEEDED(pElem2->get_scrollHeight(&scrollHeight)) && SUCCEEDED(pElem2->get_clientHeight(&clientHeight))) {
+		const long top = ComputeRestoredScrollTop(saved, scrollHeight, clientHeight);
+		pElem2->put_scrollTop(top);
+		pElem2->put_scrollLeft(saved.left);
+	}
+	pElem2->Release();
+}
+
+void RestorePreviewScrollState(const PreviewScrollState &saved) noexcept {
+	if (!saved.valid) {
+		return;
+	}
+	IHTMLDocument2 *pDoc = GetPreviewHtmlDocument();
+	if (pDoc == nullptr) {
+		return;
+	}
+	IHTMLDocument3 *pDoc3 = nullptr;
+	if (SUCCEEDED(pDoc->QueryInterface(IID_IHTMLDocument3, reinterpret_cast<void **>(&pDoc3)))) {
+		IHTMLElement *pElem = nullptr;
+		if (SUCCEEDED(pDoc3->get_documentElement(&pElem))) {
+			ApplyPreviewScrollToElement(pElem, saved);
+		}
+		pDoc3->Release();
+	}
+	IHTMLElement *pElem = nullptr;
+	if (SUCCEEDED(pDoc->get_body(&pElem))) {
+		ApplyPreviewScrollToElement(pElem, saved);
+	}
+	IHTMLWindow2 *pWindow = nullptr;
+	if (SUCCEEDED(pDoc->get_parentWindow(&pWindow)) && pWindow != nullptr) {
+		long top = saved.top;
+		IHTMLDocument3 *pDoc3Scroll = nullptr;
+		if (SUCCEEDED(pDoc->QueryInterface(IID_IHTMLDocument3, reinterpret_cast<void **>(&pDoc3Scroll)))) {
+			IHTMLElement *pScrollElem = nullptr;
+			if (SUCCEEDED(pDoc3Scroll->get_documentElement(&pScrollElem))) {
+				IHTMLElement2 *pElem2 = nullptr;
+				if (SUCCEEDED(pScrollElem->QueryInterface(IID_IHTMLElement2, reinterpret_cast<void **>(&pElem2)))) {
+					long scrollHeight = 0;
+					long clientHeight = 0;
+					if (SUCCEEDED(pElem2->get_scrollHeight(&scrollHeight)) && SUCCEEDED(pElem2->get_clientHeight(&clientHeight))) {
+						top = ComputeRestoredScrollTop(saved, scrollHeight, clientHeight);
+					}
+					pElem2->Release();
+				}
+				pScrollElem->Release();
+			}
+			pDoc3Scroll->Release();
+		}
+		pWindow->scrollTo(saved.left, top);
+		pWindow->Release();
+	}
+	pDoc->Release();
+}
+
 bool LoadHtmlIntoBrowser(LPCWSTR html) noexcept {
 	if (g_pBrowser == nullptr || html == nullptr) {
 		PreviewMode_Log(L"LoadHtmlIntoBrowser: null browser/html");
@@ -1221,35 +1427,15 @@ bool LoadHtmlIntoBrowser(LPCWSTR html) noexcept {
 		return false;
 	}
 
-	SAFEARRAY *psa = SafeArrayCreateVector(VT_VARIANT, 0, 1);
-	if (psa == nullptr) {
-		pHTML->Release();
-		PreviewMode_Log(L"LoadHtmlIntoBrowser: SafeArrayCreate failed");
-		return false;
-	}
-	VARIANT *pVar = nullptr;
-	if (FAILED(SafeArrayAccessData(psa, reinterpret_cast<void **>(&pVar)))) {
-		SafeArrayDestroy(psa);
-		pHTML->Release();
-		PreviewMode_Log(L"LoadHtmlIntoBrowser: SafeArrayAccessData failed");
-		return false;
-	}
-	pVar->vt = VT_BSTR;
-	pVar->bstrVal = SysAllocString(html);
-	SafeArrayUnaccessData(psa);
-
-	PreviewMode_Log(L"LoadHtmlIntoBrowser: clear+write...");
-	const DWORD t0 = GetTickCount();
-	pHTML->clear();
-	const HRESULT hrWrite = pHTML->write(psa);
-	PreviewMode_Log(L"LoadHtmlIntoBrowser: write hr=0x%08lX (%lums)", hrWrite, GetTickCount() - t0);
-	SafeArrayDestroy(psa);
+	const PreviewScrollState scroll = GetPreviewScrollState(pHTML);
+	const bool loaded = WriteHtmlToDocument(pHTML, html);
 	pHTML->Release();
-	if (SUCCEEDED(hrWrite)) {
+	if (loaded) {
 		ApplyPreviewZoom();
+		RestorePreviewScrollState(scroll);
 		ApplyPreviewBrowserChrome();
 	}
-	return SUCCEEDED(hrWrite);
+	return loaded;
 }
 
 void GetDocumentUtf8(char *text, size_t textCapacity) noexcept {
@@ -1282,6 +1468,63 @@ void GetDocumentUtf8(char *text, size_t textCapacity) noexcept {
 	NP2HeapFree(wide);
 }
 
+struct EditFocusState {
+	HWND hwndFocus;
+	Sci_Position anchor;
+	Sci_Position current;
+	bool editHadFocus;
+};
+
+EditFocusState SaveEditFocusState() noexcept {
+	EditFocusState state {};
+	state.hwndFocus = GetFocus();
+	if (hwndEdit != nullptr) {
+		state.editHadFocus = (state.hwndFocus == hwndEdit || IsChild(hwndEdit, state.hwndFocus));
+		state.anchor = SciCall_GetAnchor();
+		state.current = SciCall_GetCurrentPos();
+	}
+	return state;
+}
+
+void RestoreEditFocusState(const EditFocusState &state) noexcept {
+	if (!state.editHadFocus || hwndEdit == nullptr) {
+		return;
+	}
+	if (SciCall_GetAnchor() != state.anchor || SciCall_GetCurrentPos() != state.current) {
+		SciCall_SetSel(state.anchor, state.current);
+	}
+	const HWND hwndFocus = GetFocus();
+	if (hwndFocus != hwndEdit && hwndFocus != state.hwndFocus) {
+		SetFocus(hwndEdit);
+	}
+}
+
+bool IsEditInputMessage(UINT msg, HWND hwndMsg) noexcept {
+	if (hwndEdit == nullptr || hwndMsg == nullptr) {
+		return false;
+	}
+	if (hwndMsg != hwndEdit && !IsChild(hwndEdit, hwndMsg)) {
+		return false;
+	}
+	if (msg >= WM_KEYFIRST && msg <= WM_KEYLAST) {
+		return true;
+	}
+	if (msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST) {
+		return true;
+	}
+	switch (msg) {
+	case WM_IME_CHAR:
+	case WM_IME_COMPOSITION:
+	case WM_IME_STARTCOMPOSITION:
+	case WM_IME_ENDCOMPOSITION:
+	case WM_IME_NOTIFY:
+	case WM_UNICHAR:
+		return true;
+	default:
+		return false;
+	}
+}
+
 void UpdatePreviewContent() noexcept {
 	PreviewMode_Log(L"UpdatePreviewContent enter active=%d inUpdate=%d dirty=%d lex=%d",
 		g_active, g_inUpdate, g_dirty, pLexCurrent ? pLexCurrent->rid : -1);
@@ -1290,8 +1533,10 @@ void UpdatePreviewContent() noexcept {
 	}
 	g_inUpdate = true;
 	const unsigned serialAtStart = g_dirtySerial;
+	const EditFocusState editFocus = SaveEditFocusState();
 	if (!EnsureBrowser()) {
 		PreviewMode_Log(L"UpdatePreviewContent: EnsureBrowser failed");
+		RestoreEditFocusState(editFocus);
 		g_inUpdate = false;
 		g_dirty = true;
 		SetTimer(g_hwndMain, ID_PREVIEW_TIMER, PREVIEW_LAYOUT_RETRY_MS, nullptr);
@@ -1328,13 +1573,15 @@ void UpdatePreviewContent() noexcept {
 
 	NP2HeapFree(html);
 	NP2HeapFree(text);
+	RestoreEditFocusState(editFocus);
 	g_inUpdate = false;
-	if (serialAtStart == g_dirtySerial) {
+	if (loaded && serialAtStart == g_dirtySerial) {
 		g_dirty = false;
 	} else {
 		SchedulePreviewUpdate();
 	}
-	PreviewMode_Log(L"UpdatePreviewContent leave");
+	PreviewMode_Log(L"UpdatePreviewContent leave dirty=%d serial=%u/%u loaded=%d",
+		g_dirty, serialAtStart, g_dirtySerial, loaded);
 }
 
 void ShowContainer(bool show) noexcept {
@@ -1406,16 +1653,49 @@ void AttachPreviewWheelHandler(HWND hwnd) noexcept {
 	}
 }
 
+void StripPreviewBorderStyles(HWND hwnd) noexcept {
+	if (hwnd == nullptr) {
+		return;
+	}
+	LONG style = GetWindowLong(hwnd, GWL_STYLE);
+	style &= ~(WS_BORDER | WS_DLGFRAME);
+	SetWindowLong(hwnd, GWL_STYLE, style);
+	LONG exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+	exStyle &= ~(WS_EX_CLIENTEDGE | WS_EX_STATICEDGE | WS_EX_WINDOWEDGE | WS_EX_DLGMODALFRAME);
+	SetWindowLong(hwnd, GWL_EXSTYLE, exStyle);
+	SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+		SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+}
+
+void UpdatePreviewContainerBackground() noexcept {
+	if (g_hwndContainer == nullptr) {
+		return;
+	}
+	const bool dark = IsPreviewDarkChrome() && DarkMode_ShouldApply(true);
+	if (g_previewContainerBrush != nullptr) {
+		DeleteObject(g_previewContainerBrush);
+		g_previewContainerBrush = nullptr;
+	}
+	g_previewContainerBrush = CreateSolidBrush(dark ? RGB(0x0D, 0x11, 0x17) : RGB(0xFF, 0xFF, 0xFF));
+	if (g_previewContainerBrush != nullptr) {
+		SetClassLongPtr(g_hwndContainer, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(g_previewContainerBrush));
+	}
+	DarkMode_AllowWindow(g_hwndContainer, dark);
+	InvalidateRect(g_hwndContainer, nullptr, TRUE);
+}
+
 void ApplyPreviewBrowserChrome() noexcept {
 	if (g_hwndContainer == nullptr) {
 		return;
 	}
 	const bool apply = IsPreviewDarkChrome() && DarkMode_ShouldApply(true);
+	UpdatePreviewContainerBackground();
 
 	auto styleBrowserHwnd = [&](HWND hwnd) noexcept {
 		if (hwnd == nullptr) {
 			return;
 		}
+		StripPreviewBorderStyles(hwnd);
 		DarkMode_AllowWindow(hwnd, apply);
 		SetWindowTheme(hwnd, apply ? L"DarkMode_Explorer" : L"Explorer", nullptr);
 		if (apply) {
@@ -1435,6 +1715,7 @@ void ApplyPreviewBrowserChrome() noexcept {
 
 	HWND hwndDoc = FindWindowExW(g_hwndContainer, nullptr, L"Internet Explorer_Server", nullptr);
 	styleBrowserHwnd(hwndDoc);
+	StripPreviewBorderStyles(g_hwndContainer);
 	AttachPreviewWheelHandler(g_hwndContainer);
 	AttachPreviewWheelHandler(hwndDoc);
 
@@ -1701,6 +1982,10 @@ void PreviewMode_Destroy() noexcept {
 		DestroyWindow(g_hwndContainer);
 		g_hwndContainer = nullptr;
 	}
+	if (g_previewContainerBrush != nullptr) {
+		DeleteObject(g_previewContainerBrush);
+		g_previewContainerBrush = nullptr;
+	}
 }
 
 void PreviewMode_SetMainWindow(HWND hwndMain) noexcept {
@@ -1873,10 +2158,6 @@ void PreviewMode_OnPostedUpdate() noexcept {
 			SetTimer(g_hwndMain, ID_PREVIEW_TIMER, PREVIEW_LAYOUT_RETRY_MS, nullptr);
 			return;
 		}
-	}
-	if (g_inUpdate) {
-		SchedulePreviewUpdate();
-		return;
 	}
 	UpdatePreviewContent();
 	if (g_dirty) {
