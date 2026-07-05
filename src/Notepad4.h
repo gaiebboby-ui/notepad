@@ -1,7 +1,7 @@
 /******************************************************************************
 *
 *
-* Notepad4
+* Notepad
 *
 * Notepad4.h
 *   Global definitions and declarations
@@ -20,8 +20,8 @@
 #pragma once
 
 //==== Main Window ============================================================
-#define WC_NOTEPAD4 L"Notepad4"
-#define MY_APPUSERMODELID	L"Notepad4 Text Editor"
+#define WC_NOTEPAD L"Notepad"
+#define MY_APPUSERMODELID	L"Notepad Text Editor"
 
 enum TripleBoolean {
 	TripleBoolean_False = 0,
@@ -56,7 +56,7 @@ enum MatchTextFlag {
 };
 
 //==== Data Type for WM_COPYDATA ==============================================
-#define DATA_NOTEPAD4_PARAMS 0xFB10
+#define DATA_NOTEPAD_PARAMS 0xFB10
 struct NP2PARAMS {
 	bool	flagFileSpecified;
 	bool	flagReadOnlyMode;
@@ -125,6 +125,8 @@ enum {
 // https://www.codeproject.com/tips/1017834/how-to-send-data-from-one-process-to-another-in-cs
 #define APPM_COPYDATA				(WM_APP + 6)
 #define APPM_DROPFILES				(WM_APP + 7)	// ScintillaWin::Drop()
+#define APPM_PREVIEW_UPDATE			(WM_APP + 8)	// deferred preview render
+#define APPM_PREVIEW_RELAYOUT		(WM_APP + 9)	// preview splitter drag / maximize
 
 #define ID_WATCHTIMER				0xA000	// file watch timer
 #define ID_PASTEBOARDTIMER			0xA001	// paste board timer
@@ -160,7 +162,7 @@ enum PrintFooterOption {
 	PrintFooterOption_LeaveBlank,
 };
 
-#define INI_SECTION_NAME_NOTEPAD4				L"Notepad4"
+#define INI_SECTION_NAME_NOTEPAD				L"Notepad"
 #define INI_SECTION_NAME_SETTINGS				L"Settings"
 #define INI_SECTION_NAME_FLAGS					L"Settings2"
 #define INI_SECTION_NAME_WINDOW_POSITION		L"Window Position"
@@ -318,8 +320,10 @@ LPCWSTR AutoSave_GetDefaultFolder() noexcept;
 LRESULT CALLBACK MainWndProc(HWND hwnd, UINT umsg, WPARAM wParam, LPARAM lParam);
 LRESULT MsgCreate(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept;
 void	CreateBars(HWND hwnd, HINSTANCE hInstance) noexcept;
+void	RecreateBars(HWND hwnd, HINSTANCE hInstance) noexcept;
 void	MsgDPIChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept;
 void	MsgThemeChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept;
+void	ApplyShellDarkMode(HWND hwnd, bool dark) noexcept;
 void	MsgSize(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept;
 void	MsgInitMenu(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept;
 LRESULT MsgCommand(HWND hwnd, WPARAM wParam, LPARAM lParam);

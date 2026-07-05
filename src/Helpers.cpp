@@ -332,6 +332,94 @@ LSTATUS Registry_SetInt(HKEY hKey, LPCWSTR valueName, DWORD value) noexcept {
 	return status;
 }
 
+#if defined(_WIN64)
+#define NP2RegSamMachine	0
+#else
+#define NP2RegSamMachine	KEY_WOW64_64KEY
+#endif
+
+void Registry_NotifyAssociationChanged() noexcept {
+	SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+}
+
+void Registry_UpdateApplicationSupportedTypes(HKEY hApplicationsKey, LPCWSTR fileAssociations) noexcept {
+	if (hApplicationsKey == nullptr || StrIsEmpty(fileAssociations)) {
+		return;
+	}
+
+	WCHAR supported[256];
+	lstrcpyn(supported, fileAssociations, COUNTOF(supported));
+	for (LPWSTR p = supported; *p != L'\0'; ++p) {
+		if (*p == L';') {
+			*p = L' ';
+		}
+	}
+	Registry_SetString(hApplicationsKey, L"SupportedTypes", supported);
+}
+
+void Registry_UpdateDefaultProgramsRegistration(bool enable, LPCWSTR friendlyName, LPCWSTR fileAssociations) noexcept {
+	if (enable) {
+		HKEY hKey;
+		if (Registry_CreateKey(HKEY_LOCAL_MACHINE, NP2RegSubKey_RegisteredApps, &hKey, NP2RegSamMachine) == ERROR_SUCCESS) {
+			Registry_SetString(hKey, NP2RegSubKey_RegisteredAppValue, NP2RegSubKey_Capabilities);
+			RegCloseKey(hKey);
+		}
+		if (Registry_CreateKey(HKEY_LOCAL_MACHINE, NP2RegSubKey_Capabilities, &hKey, NP2RegSamMachine) == ERROR_SUCCESS) {
+			Registry_SetString(hKey, L"ApplicationName", friendlyName);
+			Registry_SetString(hKey, L"ApplicationDescription", friendlyName);
+			if (!StrIsEmpty(fileAssociations)) {
+				Registry_SetString(hKey, L"FileAssociations", fileAssociations);
+			}
+			RegCloseKey(hKey);
+		}
+	} else {
+		HKEY hKey;
+		if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, NP2RegSubKey_RegisteredApps, 0, KEY_WRITE | NP2RegSamMachine, &hKey) == ERROR_SUCCESS) {
+			RegDeleteValue(hKey, NP2RegSubKey_RegisteredAppValue);
+			RegCloseKey(hKey);
+		}
+		Registry_DeleteTree(HKEY_LOCAL_MACHINE, NP2RegSubKey_Capabilities);
+	}
+}
+
+void Registry_UpdateProgIdRegistration(bool enable, LPCWSTR friendlyName, LPCWSTR modulePath, LPCWSTR openCommand) noexcept {
+	if (enable) {
+		HKEY hSubKey;
+		if (Registry_CreateKey(HKEY_CLASSES_ROOT, NP2RegSubKey_ProgId L"\\shell\\open\\command", &hSubKey) == ERROR_SUCCESS) {
+			HKEY hKey;
+			if (RegOpenKeyEx(HKEY_CLASSES_ROOT, NP2RegSubKey_ProgId, 0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
+				Registry_SetDefaultString(hKey, friendlyName);
+				Registry_SetString(hKey, L"DefaultIcon", modulePath);
+				Registry_SetDefaultString(hSubKey, openCommand);
+				RegCloseKey(hKey);
+			}
+			RegCloseKey(hSubKey);
+		}
+	} else {
+		Registry_DeleteTree(HKEY_CLASSES_ROOT, NP2RegSubKey_ProgId);
+	}
+}
+
+#if _WIN32_WINNT < _WIN32_WINNT_VISTA
+LSTATUS Registry_DeleteTree(HKEY hKey, LPCWSTR lpSubKey) noexcept {
+	using RegDeleteTreeSig = LSTATUS (WINAPI *)(HKEY hKey, LPCWSTR lpSubKey);
+	RegDeleteTreeSig pfnRegDeleteTree = DLLFunctionEx<RegDeleteTreeSig>(L"advapi32.dll", "RegDeleteTreeW");
+
+	LSTATUS status;
+	if (pfnRegDeleteTree != nullptr) {
+		status = pfnRegDeleteTree(hKey, lpSubKey);
+	} else {
+		status = RegDeleteKey(hKey, lpSubKey);
+		if (status != ERROR_SUCCESS && status != ERROR_FILE_NOT_FOUND) {
+			// TODO: Deleting a Key with Subkeys on Windows XP.
+			// https://docs.microsoft.com/en-us/windows/win32/sysinfo/deleting-a-key-with-subkeys
+		}
+	}
+
+	return status;
+}
+#endif
+
 UINT ParseCommaList(LPCWSTR str, int result[], UINT count) noexcept {
 	if (StrIsEmpty(str)) {
 		return 0;
@@ -893,7 +981,7 @@ void SetToRightBottomEx(HWND hDlg, HWND hParent) noexcept {
 	SetWindowPos(hDlg, nullptr, x, y, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
 }
 
-// Why doesn’t the "Automatically move pointer to the default button in a dialog box"
+// Why doesnвЂ™t the "Automatically move pointer to the default button in a dialog box"
 // work for nonstandard dialog boxes, and how do I add it to my own nonstandard dialog boxes?
 // https://blogs.msdn.microsoft.com/oldnewthing/20130826-00/?p=3413/
 void SnapToDefaultButton(HWND hwndBox) noexcept {

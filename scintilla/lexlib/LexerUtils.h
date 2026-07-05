@@ -1,4 +1,4 @@
-// This file is part of Notepad4.
+// This file is part of Notepad.
 // See License.txt for details about distribution and modification.
 #pragma once
 

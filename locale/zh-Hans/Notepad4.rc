@@ -663,8 +663,8 @@ BEGIN
 		POPUP "Esc 键特别功能(&K)"
 		BEGIN
 			MENUITEM "无(&N)",						IDM_VIEW_NOESCFUNC
-			MENUITEM "最小化 Notepad4(&M)",			IDM_VIEW_ESCMINIMIZE
-			MENUITEM "退出 Notepad4(&X)",			IDM_VIEW_ESCEXIT
+			MENUITEM "最小化 Notepad(&M)",			IDM_VIEW_ESCMINIMIZE
+			MENUITEM "退出 Notepad(&X)",			IDM_VIEW_ESCEXIT
 		END
 		POPUP "其他设置(&I)"
 		BEGIN
@@ -703,7 +703,7 @@ BEGIN
 			MENUITEM "使用内嵌模式输入法(&I)",		IDM_SET_USE_INLINE_IME
 			MENUITEM SEPARATOR
 			MENUITEM "系统集成(&S)...",				IDM_SET_SYSTEM_INTEGRATION
-			MENUITEM "打开 Notepad4.ini(&O)\tCtrl+F7",	CMD_OPENINIFILE
+			MENUITEM "打开 Notepad.ini(&O)\tCtrl+F7",	CMD_OPENINIFILE
 		END
 		MENUITEM "退出时保存设置(&O)",				IDM_VIEW_SAVESETTINGS
 		MENUITEM "立即保存设置(&V)\tF7",			IDM_VIEW_SAVESETTINGSNOW
@@ -787,7 +787,7 @@ BEGIN
 		MENUITEM "在线 &Wiki",						IDM_HELP_ONLINE_WIKI
 		MENUITEM "命令行帮助(&C)",					IDM_CMDLINE_HELP
 		MENUITEM SEPARATOR
-		MENUITEM "关于 Notepad4(&A)\tF1",			IDM_HELP_ABOUT
+		MENUITEM "关于 Notepad(&A)\tF1",			IDM_HELP_ABOUT
 	END
 END
 
@@ -822,9 +822,9 @@ BEGIN
 	END
 	POPUP "+"
 	BEGIN
-		MENUITEM "打开 Notepad4(&O)",				IDM_TRAY_RESTORE
+		MENUITEM "打开 Notepad(&O)",				IDM_TRAY_RESTORE
 		MENUITEM SEPARATOR
-		MENUITEM "退出 Notepad4(&X)",				IDM_TRAY_EXIT
+		MENUITEM "退出 Notepad(&X)",				IDM_TRAY_EXIT
 	END
 	POPUP "+"
 	BEGIN
@@ -1069,7 +1069,7 @@ END
 
 IDD_ABOUT DIALOGEX 0, 0, 255, 144
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "Notepad4"
+CAPTION "Notepad"
 FONT 9, "Segoe UI", 400, 0, 0x1
 BEGIN
     DEFPUSHBUTTON   "确定",IDOK,142,123,50,14
@@ -1195,7 +1195,7 @@ CAPTION "系统集成"
 FONT 9, "Segoe UI", 400, 0, 0x1
 BEGIN
     GROUPBOX        "系统集成(需要管理员权限)",IDC_GROUP_SYSTEM_INTEGRATION,7,7,218,84
-    AUTOCHECKBOX    "将 Notepad4 添加到 Windows 资源管理器的右键菜单",IDC_ENABLE_CONTEXT_MENU,14,20,204,10,WS_TABSTOP
+    AUTOCHECKBOX    "将 Notepad 添加到 Windows 资源管理器的右键菜单",IDC_ENABLE_CONTEXT_MENU,14,20,204,10,WS_TABSTOP
     LTEXT           "右键菜单文字: ",IDC_STATIC,28,35,70,8
     EDITTEXT        IDC_CONTEXT_MENU_TEXT,100,32,118,14,ES_AUTOHSCROLL | WS_TABSTOP
     AUTOCHECKBOX    "启用任务栏跳转列表",IDC_ENABLE_JUMP_LIST,14,48,204,10,WS_TABSTOP
@@ -1536,7 +1536,7 @@ END
 
 IDD_INFOBOX DIALOGEX 0, 0, 244, 74
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "Notepad4"
+CAPTION "Notepad"
 FONT 9, "Segoe UI", 400, 0, 0x1
 BEGIN
     LTEXT           "",IDC_INFOBOXRECT,0,0,244,49
@@ -1721,9 +1721,9 @@ END
 
 STRINGTABLE
 BEGIN
-    IDS_APPTITLE            "Notepad4"
+    IDS_APPTITLE            "Notepad"
     IDS_APPTITLE_ELEVATED   "%s (管理员)"
-    IDS_APPTITLE_PASTEBOARD "Notepad4: 粘贴板"
+    IDS_APPTITLE_PASTEBOARD "Notepad: 粘贴板"
     IDS_UNTITLED            "未命名"
     IDS_TITLEEXCERPT        "“%s”"
     IDS_READONLY_FILE       "(只读文件)"
@@ -1735,7 +1735,7 @@ BEGIN
     IDS_SAVEFILE            "正在保存“%s”..."
     IDS_PRINTFILE           "正在打印页面 %s..."
     IDS_SAVINGSETTINGS      "正在保存设置..."
-    IDS_LINKDESCRIPTION     "使用 Notepad4 编辑(&4)"
+    IDS_LINKDESCRIPTION     "使用 Notepad 编辑(&N)"
     IDS_FILTER_ALL          "所有文件(*.*)|*.*|"
     IDS_FILTER_EXE          "可执行文件(*.exe;*.com;*.bat;*.cmd;*.lnk;*.pif)|*.exe;*.com;*.bat;*.cmd;*.lnk;*.pif|所有文件(*.*)|*.*|"
 END
@@ -1833,7 +1833,7 @@ BEGIN
     IDS_ERR_BROWSE          "没有找到文件浏览器插件。\nmatepath 文件浏览器插件可以从如下地址下载:\nhttps://github.com/zufuliu/notepad4/releases\n\n是否立即打开下载页面？"
     IDS_ERR_MRUDLG          "没有权限访问选中的文件！\n要从列表中移除它吗？"
     IDS_ERR_CREATELINK      "创建桌面快捷方式时出错。"
-    IDS_ERR_PREVWINDISABLED "现有的 Notepad4 窗口正忙或有一个活动的对话框。\n要打开一个新的窗口吗？"
+    IDS_ERR_PREVWINDISABLED "现有的 Notepad 窗口正忙或有一个活动的对话框。\n要打开一个新的窗口吗？"
     IDS_SELRECT             "此操作不能在矩形选区内执行。"
     IDS_BUFFERTOOSMALL      "此操作不能执行(行太长)。"
     IDS_FIND_WRAPFW         "已到文档末尾，从文档开头重新搜索。"
@@ -1846,7 +1846,7 @@ BEGIN
     IDS_ERR_UNICODE         "转换该 Unicode 文件时出错。\n如果保存该文件，数据将会丢失！"
     IDS_BINARY_FILE_OPENED  "这不太像是一个文本文件，因此以只读模式打开，\n以防止意外的编辑造成文件损坏。"
 #if NP2_ENABLE_APP_LOCALIZATION_DLL
-    IDS_CHANGE_LANG_RESTART "更改界面语言需要重新启动 Notepad4，现在就重新启动吗？"
+    IDS_CHANGE_LANG_RESTART "更改界面语言需要重新启动 Notepad，现在就重新启动吗？"
 #endif
 END
 

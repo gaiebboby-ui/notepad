@@ -1,4 +1,4 @@
-// This file is part of Notepad4.
+// This file is part of Notepad.
 // See License.txt for details about distribution and modification.
 #pragma once
 
@@ -10,6 +10,9 @@
 //! Enable building with Hi-DPI image resources.
 // When disabled, only build with image resources at 100% scaling.
 #define NP2_ENABLE_HIDPI_IMAGE_RESOURCE			1
+
+//! Default toolbar UI scale (percent of window DPI).
+#define NP2_TOOLBAR_UI_SCALE_PERCENT			173
 
 //! Enable localization with satellite resource DLLs.
 #define NP2_ENABLE_APP_LOCALIZATION_DLL			1

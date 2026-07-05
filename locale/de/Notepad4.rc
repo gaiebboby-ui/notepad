@@ -663,8 +663,8 @@ BEGIN
 		POPUP "Fun&ktion der Esc Taste"
 		BEGIN
 			MENUITEM "&Keine",						IDM_VIEW_NOESCFUNC
-			MENUITEM "&Minimiere Notepad4",			IDM_VIEW_ESCMINIMIZE
-			MENUITEM "&Beende Notepad4",			IDM_VIEW_ESCEXIT
+			MENUITEM "&Minimiere Notepad",			IDM_VIEW_ESCMINIMIZE
+			MENUITEM "&Beende Notepad",			IDM_VIEW_ESCEXIT
 		END
 		POPUP "Andere &Einstellungen"
 		BEGIN
@@ -703,7 +703,7 @@ BEGIN
 			MENUITEM "Inline &IME Modus verwenden",	IDM_SET_USE_INLINE_IME
 			MENUITEM SEPARATOR
 			MENUITEM "&Systemintegration...",			IDM_SET_SYSTEM_INTEGRATION
-			MENUITEM "Öffne &Notepad4.ini\tStrg+F7",	CMD_OPENINIFILE
+			MENUITEM "Öffne &Notepad.ini\tStrg+F7",	CMD_OPENINIFILE
 		END
 		MENUITEM "Einstellungen beim Beenden &speichern",		IDM_VIEW_SAVESETTINGS
 		MENUITEM "Einstellungen &jetzt speichern\tF7",			IDM_VIEW_SAVESETTINGSNOW
@@ -787,7 +787,7 @@ BEGIN
 		MENUITEM "Online &Wiki",				IDM_HELP_ONLINE_WIKI
 		MENUITEM "&Kommandozeilen Hilfe",		IDM_CMDLINE_HELP
 		MENUITEM SEPARATOR
-		MENUITEM "Üb&er Notepad4\tF1",			IDM_HELP_ABOUT
+		MENUITEM "Üb&er Notepad\tF1",			IDM_HELP_ABOUT
 	END
 END
 
@@ -822,9 +822,9 @@ BEGIN
 	END
 	POPUP "+"
 	BEGIN
-		MENUITEM "Ö&ffne Notepad4",					IDM_TRAY_RESTORE
+		MENUITEM "Ö&ffne Notepad",					IDM_TRAY_RESTORE
 		MENUITEM SEPARATOR
-		MENUITEM "&Beende Notepad4",				IDM_TRAY_EXIT
+		MENUITEM "&Beende Notepad",				IDM_TRAY_EXIT
 	END
 	POPUP "+"
 	BEGIN
@@ -1069,7 +1069,7 @@ END
 
 IDD_ABOUT DIALOGEX 0, 0, 255, 144
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "Notepad4"
+CAPTION "Notepad"
 FONT 9, "Segoe UI", 400, 0, 0x1
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,142,123,50,14
@@ -1195,7 +1195,7 @@ CAPTION "Systemintegration"
 FONT 9, "Segoe UI", 400, 0, 0x1
 BEGIN
     GROUPBOX        "Systemintegration (benötigt Administratorrechte)",IDC_GROUP_SYSTEM_INTEGRATION,7,7,218,84
-    AUTOCHECKBOX    "Notepad4 dem Windows Explorer &Kontextmenü hinzufügen",IDC_ENABLE_CONTEXT_MENU,14,20,204,10,WS_TABSTOP
+    AUTOCHECKBOX    "Notepad dem Windows Explorer &Kontextmenü hinzufügen",IDC_ENABLE_CONTEXT_MENU,14,20,204,10,WS_TABSTOP
     LTEXT           "Kontextmenütext:",IDC_STATIC,28,35,70,8
     EDITTEXT        IDC_CONTEXT_MENU_TEXT,100,32,118,14,ES_AUTOHSCROLL | WS_TABSTOP
     AUTOCHECKBOX    "Aktiviere Taskbar &Jump List",IDC_ENABLE_JUMP_LIST,14,48,204,10,WS_TABSTOP
@@ -1536,7 +1536,7 @@ END
 
 IDD_INFOBOX DIALOGEX 0, 0, 244, 74
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "Notepad4"
+CAPTION "Notepad"
 FONT 9, "Segoe UI", 400, 0, 0x1
 BEGIN
     LTEXT           "",IDC_INFOBOXRECT,0,0,244,49
@@ -1721,9 +1721,9 @@ END
 
 STRINGTABLE
 BEGIN
-    IDS_APPTITLE            "Notepad4"
+    IDS_APPTITLE            "Notepad"
     IDS_APPTITLE_ELEVATED   "%s (Administrator)"
-    IDS_APPTITLE_PASTEBOARD "Notepad4: Zwischenablage"
+    IDS_APPTITLE_PASTEBOARD "Notepad: Zwischenablage"
     IDS_UNTITLED            "Unbenannt"
     IDS_TITLEEXCERPT        """%s"""
     IDS_READONLY_FILE       "(Schreibgeschützt)"
@@ -1735,7 +1735,7 @@ BEGIN
     IDS_SAVEFILE            "Speichere ""%s""..."
     IDS_PRINTFILE           "Drucke Seite %s..."
     IDS_SAVINGSETTINGS      "Einstellungen speichern..."
-    IDS_LINKDESCRIPTION     "Öffnen mit Notepad&4"
+    IDS_LINKDESCRIPTION     "Öffnen mit &Notepad"
     IDS_FILTER_ALL          "Alle Dateien (*.*)|*.*|"
     IDS_FILTER_EXE          "Ausführbare Dateien (*.exe;*.com;*.bat;*.cmd;*.lnk;*.pif)|*.exe;*.com;*.bat;*.cmd;*.lnk;*.pif|Alle Dateien (*.*)|*.*|"
 END
@@ -1833,7 +1833,7 @@ BEGIN
     IDS_ERR_BROWSE          "matepath wurde nicht gefunden.\nDas Plugin kann von https://github.com/zufuliu/notepad4/releases\nheruntergeladen werden.\n\nDownloadseite öffnen?"
     IDS_ERR_MRUDLG          "Kein Zugriff auf die gewählte Datei möglich!\nSoll diese von der Liste entfernt werden?"
     IDS_ERR_CREATELINK      "Fehler beim Erstellen der Desktopverknüpfung."
-    IDS_ERR_PREVWINDISABLED "Das existierende Notepad4 Fenster ist beschäftig oder hat eine geöffnetes Dialogfenster.\nSoll ein neues Notepad4 Fenster geöffnet werden?"
+    IDS_ERR_PREVWINDISABLED "Das existierende Notepad Fenster ist beschäftig oder hat eine geöffnetes Dialogfenster.\nSoll ein neues Notepad Fenster geöffnet werden?"
     IDS_SELRECT             "Diese Funktion kann nicht bei einer Rechteckauswahl ausgeführt werden."
     IDS_BUFFERTOOSMALL      "Diese Funktion kann nicht ausgeführt werden (Zeile zu lang)."
     IDS_FIND_WRAPFW         "Ende des Dokuments erreicht. Suche am Anfang neustarten?"
@@ -1846,7 +1846,7 @@ BEGIN
     IDS_ERR_UNICODE         "Fehler beim Konvertieren dieser Unicodedatei.\nDaten gehen verloren, wenn die Datei gespeichert wird!"
     IDS_BINARY_FILE_OPENED  "Dies ist höchstwahrscheinlich keine Textdatei, daher wird diese im Nur-Lese-Modus geöffnet,\num eine versehentliche Bearbeitung und damit eine Beschädigung der Datei zu verhindern."
 #if NP2_ENABLE_APP_LOCALIZATION_DLL
-    IDS_CHANGE_LANG_RESTART "Das Ändern der Sprache der Benutzeroberfläche erfordert einen Neustart von Notepad4, jetzt neu starten?"
+    IDS_CHANGE_LANG_RESTART "Das Ändern der Sprache der Benutzeroberfläche erfordert einen Neustart von Notepad, jetzt neu starten?"
 #endif
 END
 

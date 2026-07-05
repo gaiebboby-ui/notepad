@@ -1,7 +1,7 @@
 /******************************************************************************
 *
 *
-* Notepad4
+* Notepad
 *
 * Notepad4.cpp
 *   Main application window functionality
@@ -38,6 +38,8 @@
 #include "Edit.h"
 #include "Styles.h"
 #include "Dialogs.h"
+#include "DarkMode.h"
+#include "PreviewMode.h"
 #include "resource.h"
 
 //! show code folding level and state on line number margin
@@ -67,7 +69,7 @@ static HICON hTrayIcon = nullptr;
 static UINT uTrayIconDPI = 0;
 
 #define TOOLBAR_COMMAND_BASE	IDT_FILE_NEW
-#define DefaultToolbarButtons	L"22 3 0 1 27 2 0 4 18 19 0 5 6 0 7 8 9 20 0 10 11 0 12 0 24 0 13 14 0 15 16 0 17"
+#define DefaultToolbarButtons	L"22 3 0 1 27 2 0 4 18 19 0 5 6 0 7 8 9 20 0 10 11 0 12 0 24 0 13 14 0 15 16 0 28 17"
 static TBBUTTON tbbMainWnd[] = {
 	{0, 	0, 					0, 				 TBSTYLE_SEP, {0}, 0, 0},
 	{0, 	IDT_FILE_NEW, 		TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
@@ -97,6 +99,7 @@ static TBBUTTON tbbMainWnd[] = {
 	{24, 	IDT_FILE_LAUNCH, 	TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
 	{25, 	IDT_VIEW_ALWAYSONTOP, 	TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
 	{26, 	IDT_FILE_NEWWINDOW, 	TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
+	{27, 	IDT_VIEW_PREVIEW, 	TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
 };
 
 WCHAR	szIniFile[MAX_PATH];
@@ -141,6 +144,7 @@ bool bShowCodeFolding;
 extern CallTipInfo callTipInfo;
 static bool bViewWhiteSpace;
 static bool bViewEOLs;
+static bool bPreviewModeIni;
 
 // DBCS code page
 int		iDefaultCodePage;
@@ -279,7 +283,7 @@ extern bool bBlockCaretOutSelection;
 extern int iCaretBlinkPeriod;
 
 bool fIsElevated = false;
-static WCHAR wchWndClass[16] = WC_NOTEPAD4;
+static WCHAR wchWndClass[16] = WC_NOTEPAD;
 
 // rarely changed statusbar items
 struct CachedStatusItem {
@@ -422,6 +426,7 @@ static void CleanUpResources(bool initialized) noexcept {
 	Encoding_ReleaseResources();
 	Style_ReleaseResources();
 	Edit_ReleaseResources();
+	PreviewMode_Destroy();
 	Scintilla_ReleaseResources();
 	DarkMode_Cleanup();
 
@@ -474,7 +479,7 @@ static LONG WINAPI TopLevelHandler(EXCEPTION_POINTERS *ep) {
 			WCHAR tchPath[64];
 			const UINT pid = GetCurrentProcessId();
 			const UINT tid = GetCurrentThreadId();
-			wsprintf(tchPath, L"%s %u %u.dmp", WC_NOTEPAD4, pid, tid);
+			wsprintf(tchPath, L"%s %u %u.dmp", WC_NOTEPAD, pid, tid);
 			HANDLE hFile = CreateFile(tchPath, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
 				nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 			if (hFile != INVALID_HANDLE_VALUE) {
@@ -504,11 +509,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 	}
 #endif
 #if 0 && defined(__clang__)
-	SetEnvironmentVariable(L"UBSAN_OPTIONS", L"log_path=" WC_NOTEPAD4 L"-UBSan.log");
+	SetEnvironmentVariable(L"UBSAN_OPTIONS", L"log_path=" WC_NOTEPAD L"-UBSan.log");
 #endif
 
 	// Set global variable g_hInstance
 	g_hInstance = hInstance;
+	DarkMode_SetLogAppName(L"Notepad");
+	DarkMode_Init();
+	if (!DarkMode_VerifyMinimumWindowsVersion()) {
+		MessageBoxW(nullptr,
+			L"Notepad requires Windows 10 version 21H2 (build 19044) or later.",
+			WC_NOTEPAD, MB_ICONERROR | MB_OK);
+		return 1;
+	}
 #if NP2_ENABLE_APP_LOCALIZATION_DLL
 	g_exeInstance = hInstance;
 #endif
@@ -554,7 +567,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 	// Command Line Help Dialog
 	if (flagDisplayHelp) {
 #if NP2_ENABLE_APP_LOCALIZATION_DLL
-		hResDLL = LoadLocalizedResourceDLL(uiLanguage, WC_NOTEPAD4 L".dll");
+		hResDLL = LoadLocalizedResourceDLL(uiLanguage, WC_NOTEPAD L".dll");
 		if (hResDLL) {
 			g_hInstance = hResDLL;
 		}
@@ -608,7 +621,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 #endif
 
 #if NP2_ENABLE_APP_LOCALIZATION_DLL
-	hResDLL = LoadLocalizedResourceDLL(uiLanguage, WC_NOTEPAD4 L".dll");
+	hResDLL = LoadLocalizedResourceDLL(uiLanguage, WC_NOTEPAD L".dll");
 	if (hResDLL) {
 		g_hInstance = hInstance = hResDLL;
 	}
@@ -624,7 +637,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 
 	// Load Settings
 	LoadSettings();
-	DarkMode_Init();
+	DarkMode_WriteStartupLog(L"Notepad", np2StyleTheme);
+	DarkMode_SetPreferredAppMode(DarkMode_ShouldApply(np2StyleTheme == StyleTheme_Dark));
 
 	if (!InitApplication(hInstance)) {
 		CleanUpResources(false);
@@ -816,7 +830,7 @@ void InitInstance(HINSTANCE hInstance, int nCmdShow) {
 	HWND hwnd = CreateWindowEx(
 				   0,
 				   wchWndClass,
-				   WC_NOTEPAD4,
+				   WC_NOTEPAD,
 				   WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
 				   wi.x,
 				   wi.y,
@@ -842,6 +856,7 @@ void InitInstance(HINSTANCE hInstance, int nCmdShow) {
 		ShowWindow(hwnd, SW_HIDE); // trick ShowWindow()
 		ShowNotifyIcon(hwnd, true);
 	}
+	ApplyShellDarkMode(hwnd, np2StyleTheme == StyleTheme_Dark);
 
 	// Source Encoding
 	if (lpEncodingArg) {
@@ -971,6 +986,9 @@ void InitInstance(HINSTANCE hInstance, int nCmdShow) {
 	}
 
 	bInitDone = true;
+	if (bPreviewModeIni && pLexCurrent != nullptr && PreviewMode_IsSupported(pLexCurrent->rid)) {
+		PreviewMode_SetActive(true);
+	}
 	if (SciCall_GetLength() == 0) {
 		UpdateToolbar();
 		UpdateStatusbar();
@@ -995,7 +1013,7 @@ static inline void NP2RestoreWind(HWND hwnd) noexcept {
 	ShowNotifyIcon(hwnd, false);
 	RestoreWndFromTray(hwnd);
 	if (flagJumpTo) {
-		// scroll caret to view for `Notepad4.exe /i /g -1`
+		// scroll caret to view for `Notepad.exe /i /g -1`
 		EditEnsureSelectionVisible();
 	}
 	ShowOwnedPopups(hwnd, TRUE);
@@ -1010,7 +1028,7 @@ static inline void ExitApplication(HWND hwnd) {
 void MsgDropFiles(HWND hwnd, UINT umsg, WPARAM wParam) {
 	UNREFERENCED_PARAMETER(umsg);
 	HDROP hDrop = AsPointer<HDROP>(wParam);
-	// fix drag & drop file from 32-bit app to 64-bit Notepad4 prior Win 10
+	// fix drag & drop file from 32-bit app to 64-bit Notepad prior Win 10
 #if defined(_WIN64) && (_WIN32_WINNT < _WIN32_WINNT_WIN10)
 	if (umsg == WM_DROPFILES && !bReadOnlyMode) {
 		POINT pt;
@@ -1087,13 +1105,40 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT umsg, WPARAM wParam, LPARAM lParam)
 	case WM_MOUSEACTIVATE:
 	case WM_NCHITTEST:
 	case WM_NCCALCSIZE:
-	case WM_NCPAINT:
 	case WM_PAINT:
-	case WM_ERASEBKGND:
 	case WM_NCMOUSEMOVE:
 	case WM_NCLBUTTONDOWN:
 	case WM_WINDOWPOSCHANGING:
 		return DefWindowProc(hwnd, umsg, wParam, lParam);
+
+	case WM_NCPAINT:
+		if (np2StyleTheme == StyleTheme_Dark && DarkMode_ShouldApply(true) && bShowMenu && bShowToolbar) {
+			const LRESULT lr = DefWindowProc(hwnd, umsg, wParam, lParam);
+			DarkMode_PaintClientTopSeparator(hwnd);
+			return lr;
+		}
+		return DefWindowProc(hwnd, umsg, wParam, lParam);
+
+	case WM_NCACTIVATE:
+		if (np2StyleTheme == StyleTheme_Dark && DarkMode_ShouldApply(true) && bShowMenu && bShowToolbar) {
+			const LRESULT lr = DefWindowProc(hwnd, umsg, wParam, lParam);
+			DarkMode_PaintClientTopSeparator(hwnd);
+			return lr;
+		}
+		return DefWindowProc(hwnd, umsg, wParam, lParam);
+
+	case WM_ERASEBKGND:
+		if (np2StyleTheme == StyleTheme_Dark && DarkMode_ShouldApply(true)) {
+			RECT rc;
+			GetClientRect(hwnd, &rc);
+			FillRect(AsPointer<HDC>(wParam), &rc, DarkMode_GetCtlColorBrush(true));
+			return TRUE;
+		}
+		return DefWindowProc(hwnd, umsg, wParam, lParam);
+
+	case WM_UAHDRAWMENU:
+	case WM_UAHDRAWMENUITEM:
+		return DarkMode_HandleMenuDraw(hwnd, umsg, wParam, lParam, np2StyleTheme == StyleTheme_Dark);
 
 	case WM_WINDOWPOSCHANGED: {
 		HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
@@ -1196,6 +1241,8 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT umsg, WPARAM wParam, LPARAM lParam)
 	case WM_TIMER:
 		if (wParam == ID_AUTOSAVETIMER) {
 			AutoSave_DoWork(FileSaveFlag_Default);
+		} else if (wParam == ID_PREVIEW_TIMER) {
+			PreviewMode_OnTimer();
 		}
 		break;
 
@@ -1245,7 +1292,7 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT umsg, WPARAM wParam, LPARAM lParam)
 		// Reset Change Notify
 		//bPendingChangeNotify = false;
 
-		if (pcds->dwData == DATA_NOTEPAD4_PARAMS) {
+		if (pcds->dwData == DATA_NOTEPAD_PARAMS) {
 			const NP2PARAMS * const params = static_cast<NP2PARAMS *>(pcds->lpData);
 
 			if (params->flagReadOnlyMode) {
@@ -1411,7 +1458,7 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT umsg, WPARAM wParam, LPARAM lParam)
 		case SC_RESTORE: {
 			const LRESULT lrv = DefWindowProc(hwnd, umsg, wParam, lParam);
 			if (flagJumpTo) {
-				// scroll caret to view for `start /min Notepad4.exe /g -1`
+				// scroll caret to view for `start /min Notepad.exe /g -1`
 				EditEnsureSelectionVisible();
 			}
 			ShowOwnedPopups(hwnd, TRUE);
@@ -1452,7 +1499,7 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT umsg, WPARAM wParam, LPARAM lParam)
 		}
 	} break;
 
-	//// This message is posted before Notepad4 reactivates itself
+	//// This message is posted before Notepad reactivates itself
 	//case APPM_CHANGENOTIFYCLEAR:
 	//	bPendingChangeNotify = false;
 	//	break;
@@ -1529,6 +1576,23 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT umsg, WPARAM wParam, LPARAM lParam)
 		SendMessage(hwndEdit, WM_LBUTTONUP, MAKELPARAM(x, y), MK_CONTROL);
 		EditSelectEx(wParam, lParam);
 		SciCall_SetMultipleSelection((iSelectOption & SelectOption_EnableMultipleSelection));
+	} break;
+
+	case WM_MOUSEWHEEL:
+		if (PreviewMode_HandleMouseWheel(wParam, lParam)) {
+			return 0;
+		}
+		break;
+
+	case APPM_PREVIEW_UPDATE:
+		PreviewMode_OnPostedUpdate();
+		break;
+
+	case APPM_PREVIEW_RELAYOUT: {
+		const int cx = LOWORD(lParam);
+		const int cy = HIWORD(lParam);
+		MsgSize(hwnd, SIZE_RESTORED, MAKELPARAM(cx, cy));
+		DrawMenuBar(hwnd);
 	} break;
 
 	default:
@@ -1850,8 +1914,9 @@ LRESULT MsgCreate(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept {
 		nullptr);
 
 	// Drag & Drop
+	PreviewMode_Init(hwnd);
 #if 0//_WIN32_WINNT >= _WIN32_WINNT_WIN7
-	// enable drop file onto non-client area for elevated Notepad4
+	// enable drop file onto non-client area for elevated Notepad
 	ChangeWindowMessageFilterEx(hwnd, WM_DROPFILES, MSGFLT_ADD, nullptr);
 	ChangeWindowMessageFilterEx(hwnd, WM_COPYDATA, MSGFLT_ADD, nullptr);
 	ChangeWindowMessageFilterEx(hwnd, 0x0049 /*WM_COPYGLOBALDATA*/, MSGFLT_ADD, nullptr);
@@ -1880,11 +1945,7 @@ void CreateBars(HWND hwnd, HINSTANCE hInstance) noexcept {
 
 	bool internalBitmap = false;
 	const int scale = iAutoScaleToolbar;
-#if NP2_ENABLE_HIDPI_IMAGE_RESOURCE
-	const UINT dpi = (scale > USER_DEFAULT_SCREEN_DPI) ? (g_uCurrentDPI + scale - USER_DEFAULT_SCREEN_DPI) : g_uCurrentDPI;
-#else
-	const int dpi = g_uCurrentDPI;
-#endif
+	const UINT dpi = GetToolbarDpi(scale);
 	// Add normal Toolbar Bitmap
 	HBITMAP hbmp = nullptr;
 	if (tchToolbarBitmap != nullptr) {
@@ -1909,7 +1970,8 @@ void CreateBars(HWND hwnd, HINSTANCE hInstance) noexcept {
 		HBITMAP hbmpCopy = static_cast<HBITMAP>(CopyImage(hbmp, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION));
 		// StopWatch watch;
 		// watch.Start();
-		const bool fProcessed = BitmapAlphaBlend(hbmpCopy, GetSysColor(COLOR_3DFACE), 0x60);
+		const bool darkShell = np2StyleTheme == StyleTheme_Dark;
+		const bool fProcessed = BitmapAlphaBlend(hbmpCopy, DarkMode_GetShellBackgroundColor(darkShell), 0x60);
 		// watch.Stop();
 		// watch.ShowLog("BitmapAlphaBlend");
 		if (fProcessed) {
@@ -1997,6 +2059,7 @@ void CreateBars(HWND hwnd, HINSTANCE hInstance) noexcept {
 	GetWindowRect(hwndReBar, &rc);
 	cyReBar = rc.bottom - rc.top;
 	cyReBarFrame = bIsAppThemed ? 0 : 2;
+	ApplyShellDarkMode(hwnd, np2StyleTheme == StyleTheme_Dark);
 }
 
 void RecreateBars(HWND hwnd, HINSTANCE hInstance) noexcept {
@@ -2026,7 +2089,7 @@ void MsgDPIChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept {
 	const int cy = rc->bottom - rc->top;
 	SetWindowPos(hwnd, nullptr, rc->left, rc->top, cx, cy, SWP_NOZORDER | SWP_NOACTIVATE);
 	if (bShowToolbar) {
-		// on Window 8.1 when move Notepad4 to another monitor with same scaling settings
+		// on Window 8.1 when move Notepad to another monitor with same scaling settings
 		// WM_DPICHANGED is sent with same DPI, and WM_SIZE is not sent after WM_DPICHANGED.
 		SetWindowPos(hwndReBar, nullptr, 0, 0, cx, cyReBar, SWP_NOZORDER);
 	}
@@ -2041,6 +2104,7 @@ void MsgDPIChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept {
 	SciCall_EnsureVisible(iDocTopLine);
 	UpdateToolbar();
 	UpdateStatusbar();
+	ApplyShellDarkMode(hwnd, np2StyleTheme == StyleTheme_Dark);
 }
 
 //=============================================================================
@@ -2051,6 +2115,10 @@ void MsgDPIChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept {
 void MsgThemeChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept {
 	UNREFERENCED_PARAMETER(wParam);
 	UNREFERENCED_PARAMETER(lParam);
+
+	if (DarkMode_IsApplying()) {
+		return;
+	}
 
 	// reinitialize edit frame
 	DWORD dwExStyle = GetWindowExStyle(hwndEdit);
@@ -2071,6 +2139,27 @@ void MsgThemeChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept {
 	SendMessage(hwnd, WM_SIZE, SIZE_RESTORED, MAKELPARAM(rc.right, rc.bottom));
 	UpdateToolbar();
 	UpdateStatusbar();
+	ApplyShellDarkMode(hwnd, np2StyleTheme == StyleTheme_Dark);
+	PreviewMode_OnThemeChanged();
+}
+
+//=============================================================================
+//
+// ApplyShellDarkMode() - Apply dark/light shell theme to main window
+//
+//
+void ApplyShellDarkMode(HWND hwnd, bool dark) noexcept {
+	if (hwnd == nullptr) {
+		return;
+	}
+	DarkMode_LogApply(hwnd, dark, L"ApplyShellDarkMode");
+	const bool apply = DarkMode_ShouldApply(dark);
+	DarkMode_ApplyToWindow(hwnd, apply);
+	DarkMode_SetWindowDark(hwnd, apply);
+	DarkMode_ApplyToCommCtrlBars(hwndReBar, hwndToolbar, hwndStatus, dark);
+	if (apply && bShowMenu && bShowToolbar) {
+		DarkMode_PaintClientTopSeparator(hwnd);
+	}
 }
 
 //=============================================================================
@@ -2118,7 +2207,9 @@ void MsgSize(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept {
 		cy -= (rc.bottom - rc.top);
 	}
 
-	SetWindowPos(hwndEdit, nullptr, x, y, cx, cy, SWP_NOZORDER | SWP_NOACTIVATE);
+	int editCy = cy;
+	PreviewMode_Layout(x, y, cx, cy, &editCy);
+	SetWindowPos(hwndEdit, nullptr, x, y, cx, editCy, SWP_NOZORDER | SWP_NOACTIVATE);
 
 	// resize Statusbar items
 	UpdateStatusbar();
@@ -2497,6 +2588,14 @@ void MsgInitMenu(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept {
 	CheckMenuRadioItem(hmenu, IDM_VIEW_STYLE_THEME_DEFAULT, IDM_VIEW_STYLE_THEME_DARK, i, MF_BYCOMMAND);
 
 	CheckCmd(hmenu, IDM_VIEW_WORDWRAP, fvCurFile.fWordWrap);
+	{
+		const bool previewSupported = pLexCurrent != nullptr && PreviewMode_IsSupported(pLexCurrent->rid);
+		EnableCmd(hmenu, IDM_VIEW_PREVIEW_MODE, previewSupported);
+		CheckCmd(hmenu, IDM_VIEW_PREVIEW_MODE, PreviewMode_IsActive());
+		EnableCmd(hmenu, IDM_VIEW_PREVIEW_MAXIMIZE, previewSupported && PreviewMode_IsActive());
+		CheckCmd(hmenu, IDM_VIEW_PREVIEW_MAXIMIZE, PreviewMode_IsMaximized());
+		CheckCmd(hmenu, IDM_VIEW_PREVIEW_AUTO, PreviewMode_GetAutoEnable());
+	}
 	i = IDM_VIEW_FONTQUALITY_DEFAULT + iFontQuality;
 	CheckMenuRadioItem(hmenu, IDM_VIEW_FONTQUALITY_DEFAULT, IDM_VIEW_FONTQUALITY_CLEARTYPE, i, MF_BYCOMMAND);
 	CheckCmd(hmenu, IDM_VIEW_CARET_STYLE_BLOCK_OVR, bBlockCaretForOVRMode);
@@ -3829,6 +3928,22 @@ LRESULT MsgCommand(HWND hwnd, WPARAM wParam, LPARAM lParam) {
 		UpdateToolbar();
 	} break;
 
+	case IDT_VIEW_PREVIEW:
+	case IDM_VIEW_PREVIEW_MODE:
+		PreviewMode_Toggle();
+		UpdateToolbar();
+		DrawMenuBar(hwnd);
+		break;
+
+	case IDM_VIEW_PREVIEW_MAXIMIZE:
+		PreviewMode_ToggleMaximize();
+		DrawMenuBar(hwnd);
+		break;
+
+	case IDM_VIEW_PREVIEW_AUTO:
+		PreviewMode_SetAutoEnable(!PreviewMode_GetAutoEnable());
+		break;
+
 	case IDM_VIEW_WORDWRAPSETTINGS:
 		if (WordWrapSettingsDlg(hwnd)) {
 			SciCall_SetWrapMode(fvCurFile.fWordWrap ? iWordWrapMode : SC_WRAP_NONE);
@@ -4871,6 +4986,7 @@ LRESULT MsgNotify(HWND hwnd, WPARAM wParam, LPARAM lParam) {
 				UpdateLineNumberWidth();
 			}
 			AutoSave_Start(false);
+			PreviewMode_RequestUpdate();
 			break;
 
 		case SCN_ZOOM:
@@ -5163,6 +5279,11 @@ void LoadSettings() noexcept {
 
 	bShowWordWrapSymbols = section.GetBool(L"ShowWordWrapSymbols", false);
 	bWordWrapSelectSubLine = section.GetBool(L"WordWrapSelectSubLine", false);
+	bPreviewModeIni = section.GetBool(L"PreviewMode", false);
+	PreviewMode_SetAutoEnable(section.GetBool(L"PreviewAuto", false));
+	PreviewMode_SetHeightPercent(section.GetInt(L"PreviewHeightPercent", 50));
+	PreviewMode_SetMaximized(section.GetBool(L"PreviewMaximized", false));
+	PreviewMode_SetZoomPercent(section.GetInt(L"PreviewZoomPercent", 100));
 	bShowUnicodeControlCharacter = section.GetBool(L"ShowUnicodeControlCharacter", false);
 
 	bMatchBraces = section.GetBool(L"MatchBraces", true);
@@ -5466,6 +5587,11 @@ void SaveSettings(bool bSaveSettingsNow) noexcept {
 	section.SetIntEx(L"WordWrapSymbols", iWordWrapSymbols, EditWrapSymbol_DefaultValue);
 	section.SetBoolEx(L"ShowWordWrapSymbols", bShowWordWrapSymbols, false);
 	section.SetBoolEx(L"WordWrapSelectSubLine", bWordWrapSelectSubLine, false);
+	section.SetBoolEx(L"PreviewMode", PreviewMode_IsActive(), false);
+	section.SetBoolEx(L"PreviewAuto", PreviewMode_GetAutoEnable(), false);
+	section.SetIntEx(L"PreviewHeightPercent", PreviewMode_GetHeightPercent(), 50);
+	section.SetBoolEx(L"PreviewMaximized", PreviewMode_IsMaximized(), false);
+	section.SetIntEx(L"PreviewZoomPercent", PreviewMode_GetZoomPercent(), 100);
 	section.SetBoolEx(L"ShowUnicodeControlCharacter", bShowUnicodeControlCharacter, false);
 	section.SetBoolEx(L"MatchBraces", bMatchBraces, true);
 	section.SetBoolEx(L"HighlightCurrentBlock", bHighlightCurrentBlock, true);
@@ -6346,18 +6472,18 @@ void FindIniFile() noexcept {
 		// C:\Users\<username>\AppData\Local
 		// C:\Documents and Settings\<username>\Local Settings\Application Data
 		if (S_OK == SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &pszPath)) {
-			// always use %LOCALAPPDATA%\Notepad4 for non-portable installation
+			// always use %LOCALAPPDATA%\Notepad for non-portable installation
 			portable = false;
-			PathCombine(appData, pszPath, WC_NOTEPAD4);
+			PathCombine(appData, pszPath, WC_NOTEPAD);
 			lstrcpy(lpszIniFile, appData);
-			PathAppend(lpszIniFile, L"Notepad4.ini");
+			PathAppend(lpszIniFile, L"Notepad.ini");
 			CoTaskMemFree(pszPath);
 		}
 	}
 
 	if (portable) {
 		memcpy(lpszIniFile, tchModule, nameIndex*sizeof(WCHAR));
-		lstrcpy(&lpszIniFile[nameIndex], L"Notepad4.ini");
+		lstrcpy(&lpszIniFile[nameIndex], L"Notepad.ini");
 	}
 	if (!PathIsFile(lpszIniFile)) {
 		if (!portable) {
@@ -6365,15 +6491,18 @@ void FindIniFile() noexcept {
 		}
 		WCHAR source[MAX_PATH];
 		memcpy(source, tchModule, nameIndex*sizeof(WCHAR));
-		lstrcpy(&source[nameIndex], L"Notepad4.ini-default");
+		lstrcpy(&source[nameIndex], L"Notepad.ini-default");
 		CopyFile(source, lpszIniFile, TRUE);
 
 		if (portable) {
 			memcpy(appData, source, nameIndex*sizeof(WCHAR));
 			appData[nameIndex] = L'\0';
 		}
-		lstrcpy(&source[nameIndex], L"Notepad4 DarkTheme.ini-default");
-		PathAppend(appData, L"Notepad4 DarkTheme.ini");
+		lstrcpy(&source[nameIndex], L"Notepad DarkTheme.ini-default");
+		if (!PathIsFile(source)) {
+			lstrcpy(&source[nameIndex], L"Notepad4 DarkTheme.ini-default");
+		}
+		PathAppend(appData, L"Notepad DarkTheme.ini");
 		CopyFile(source, appData, TRUE);
 	}
 
@@ -6386,7 +6515,7 @@ void FindIniFile() noexcept {
 		fileSize.QuadPart = 0;
 		if (GetFileSizeEx(hFile, &fileSize) && fileSize.QuadPart < 2) {
 			DWORD dw;
-			WriteFile(hFile, L"\xFEFF[Notepad4]\r\n", 26, &dw, nullptr);
+			WriteFile(hFile, L"\xFEFF[Notepad]\r\n", 26, &dw, nullptr);
 		}
 		CloseHandle(hFile);
 	}
@@ -6411,7 +6540,7 @@ bool CreateIniFile(LPCWSTR lpszIniFile) noexcept {
 			fileSize.QuadPart = 0;
 			if (GetFileSizeEx(hFile, &fileSize) && fileSize.QuadPart < 2) {
 				DWORD dw;
-				WriteFile(hFile, L"\xFEFF[Notepad4]\r\n", 26, &dw, nullptr);
+				WriteFile(hFile, L"\xFEFF[Notepad]\r\n", 26, &dw, nullptr);
 			}
 			CloseHandle(hFile);
 			return true;
@@ -6450,6 +6579,11 @@ void UpdateToolbar() noexcept {
 	EnableTool(IDT_EDIT_DELETE, nonEmpty);
 
 	CheckTool(IDT_VIEW_WORDWRAP, fvCurFile.fWordWrap);
+	{
+		const bool previewSupported = pLexCurrent != nullptr && PreviewMode_IsSupported(pLexCurrent->rid);
+		EnableTool(IDT_VIEW_PREVIEW, previewSupported);
+		CheckTool(IDT_VIEW_PREVIEW, PreviewMode_IsActive());
+	}
 	CheckTool(IDT_VIEW_ALWAYSONTOP, IsTopMost());
 }
 
@@ -7325,7 +7459,7 @@ bool SaveFileDlg(FileSaveFlag saveFlag, LPWSTR lpstrFile, int cchFile, LPCWSTR l
 *
 * ActivatePrevInst()
 *
-* Tries to find and activate an already open Notepad4 Window
+* Tries to find and activate an already open Notepad Window
 *
 *
 ******************************************************************************/
@@ -7404,7 +7538,7 @@ static void ActivatePrevWindow(HWND hwnd, LPCWSTR lpszFile) noexcept {
 	params->flagSetEOLMode = flagSetEOLMode;
 
 	COPYDATASTRUCT cds;
-	cds.dwData = DATA_NOTEPAD4_PARAMS;
+	cds.dwData = DATA_NOTEPAD_PARAMS;
 	cds.cbData = static_cast<DWORD>(GlobalSize(params));
 	cds.lpData = params;
 
@@ -7722,7 +7856,7 @@ bool RelaunchElevated() {
 //
 // SnapToDefaultPos()
 //
-// Aligns Notepad4 to the default window position on the current screen
+// Aligns Notepad to the default window position on the current screen
 //
 //
 void SnapToDefaultPos(HWND hwnd) noexcept {
@@ -7790,7 +7924,7 @@ void ShowNotifyIcon(HWND hwnd, bool bAdd) noexcept {
 	nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
 	nid.uCallbackMessage = APPM_TRAYMESSAGE;
 	nid.hIcon = hTrayIcon;
-	lstrcpy(nid.szTip, WC_NOTEPAD4);
+	lstrcpy(nid.szTip, WC_NOTEPAD);
 	Shell_NotifyIcon(bAdd ? NIM_ADD : NIM_DELETE, &nid);
 }
 
@@ -8073,7 +8207,7 @@ LPCWSTR AutoSave_GetDefaultFolder() noexcept {
 		LPWSTR pszPath = nullptr;
 		const HRESULT hr = SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &pszPath);
 		if (hr == S_OK) {
-			PathCombine(szFolder, pszPath, WC_NOTEPAD4);
+			PathCombine(szFolder, pszPath, WC_NOTEPAD);
 			CoTaskMemFree(pszPath);
 		} else {
 			GetModuleFileName(nullptr, szFolder, MAX_PATH);

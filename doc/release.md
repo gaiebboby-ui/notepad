@@ -1,6 +1,24 @@
 > [!Note]
 > [v25.07r5738](https://github.com/zufuliu/notepad4/releases/tag/v25.07r5738) and later no longer supports Windows XP, Windows Server 2003 (see issue #974) and Windows 8/8.1 on ARM32 (Windows RT) (see issue #1023), use [v25.06r5696](https://github.com/zufuliu/notepad4/releases/tag/v25.06r5696) instead.
 
+## Unreleased (this fork)
+
+See [doc/FORK-CHANGES.md](FORK-CHANGES.md) for details.
+
+### Added
+* **Preview Mode** — Markdown (md4c GFM), HTML, XML, CSV; split view, splitter, maximize; Ctrl+wheel zoom; context menu; `NotepadPreview.log`
+* **Dark theme** — `Notepad DarkTheme.ini`, `DarkMode` shell integration, dark preview scrollbars
+* **Toolbar** — Preview Mode button (custom icon, before Close); default scale 173%
+
+### Fixed
+* Locale CI build (`Notepad4_zh-Hans_` MSBuild target)
+* CI/AppVeyor artifact names (`Notepad_*.zip`)
+* MinGW: md4c linked for preview support
+* Preview: re-entrancy hang, context menu coordinates, md4c cdecl / project integration
+
+### Settings (`Notepad.ini`)
+* `PreviewMode`, `PreviewAuto`, `PreviewHeightPercent`, `PreviewMaximized`, `PreviewZoomPercent`
+
 ## Changes Since
 * Scintilla updated to 5, see https://www.scintilla.org/ScintillaHistory.html for the changes.
 * Lexer and API updates: .
@@ -23,8 +41,8 @@
 | ru | Русский |
 | zh-Hans | 中文 (简体) | winget | `winget install zufuliu.notepad4.AVX2` |
 | zh-Hant | 中文 (繁體) | winget | `winget install zufuliu.notepad4` |
-| i18n | all above languages | winget | `winget install -e "Notepad4"` |
-| 한국어 | https://teus.me/Notepad4 | Chocolatey | `choco install notepad4` |
+| i18n | all above languages | winget | `winget install -e "Notepad"` |
+| 한국어 | https://teus.me/Notepad | Chocolatey | `choco install notepad4` |
 
 1. [Platform Update for Windows 7](https://www.microsoft.com/en-us/download/details.aspx?id=36805) is required for AVX2 version to use Direct2D on Windows 7 and Server 2008 R2.
 

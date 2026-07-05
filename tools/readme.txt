@@ -17,6 +17,14 @@ images:
 	res/Run.ico			images/Launch.svg
 	matepath/res/Run.ico
 
+	res/Toolbar16.bmp … Toolbar48.bmp
+		images/{16,24,32,40,48}x{size}/*.png assembled by ImageTool.py / build_toolbar.py
+		Preview icon: images/Preview.svg → images/*/Preview.png (IDT_VIEW_PREVIEW, index 27)
+
+	build_toolbar.py
+		Regenerate res/Toolbar*.bmp after changing icons (needs cairosvg, Pillow).
+		make_notepad4_toolbar_bitmap() in ImageTool.py lists all toolbar PNGs.
+
 	16 color bitmap:
 		res/Prev.bmp		Prev.svg
 		res/Next.bmp		Next.svg
@@ -26,9 +34,9 @@ images:
 	https://lib.rs/crates/pngquant, https://github.com/kornelski/pngquant
 	https://lib.rs/crates/oxipng, https://github.com/shssoichiro/oxipng
 
-	pngquant --force --verbose 256 --strip --output Notepad4-quant256.png Notepad4.png
-	save Notepad4-quant256.png as Notepad4-q256.png with Paint.NET
-	oxipng --strip all --nc --out Notepad4-256.png Notepad4-q256.png
+	pngquant --force --verbose 256 --strip --output Notepad-quant256.png Notepad.png
+	save Notepad-quant256.png as Notepad-q256.png with Paint.NET
+	oxipng --strip all --nc --out Notepad-256.png Notepad-q256.png
 
 	pngquant --force --verbose 256 --strip --output matepath-quant256.png matepath.png
 	save matepath-quant256.png as matepath-q256.png with Paint.NET

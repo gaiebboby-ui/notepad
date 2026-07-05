@@ -30,7 +30,7 @@
     <VCProjectVersion>15.0</VCProjectVersion>
     <ProjectGuid>{472CDF1A-5A48-4772-BC1A-C144D66F33EE}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
-    <TargetName>Notepad4</TargetName>
+    <TargetName>Notepad</TargetName>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />

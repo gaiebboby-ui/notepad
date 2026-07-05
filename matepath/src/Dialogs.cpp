@@ -972,6 +972,8 @@ void UpdateSystemIntegrationStatus(int mask, LPCWSTR lpszText, LPCWSTR lpszName)
 	} else {
 		RegDeleteTree(HKEY_CLASSES_ROOT, NP2RegSubKey_JumpList);
 	}
+
+	Registry_NotifyAssociationChanged();
 }
 
 //=============================================================================

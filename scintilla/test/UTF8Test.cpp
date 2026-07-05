@@ -1,4 +1,4 @@
-// This file is part of Notepad4.
+// This file is part of Notepad.
 // See License.txt for details about distribution and modification.
 #define _CRT_SECURE_NO_WARNINGS
 #include <cstdint>

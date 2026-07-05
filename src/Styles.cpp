@@ -1,7 +1,7 @@
 /******************************************************************************
 *
 *
-* Notepad4
+* Notepad
 *
 * Styles.cpp
 *   Scintilla Style Management
@@ -35,6 +35,7 @@
 #include "VectorISA.h"
 #include "GraphicUtils.h"
 #include "Notepad4.h"
+#include "PreviewMode.h"
 #include "Edit.h"
 #include "Styles.h"
 #include "Dialogs.h"
@@ -344,7 +345,7 @@ static COLORREF customColor[MAX_CUSTOM_COLOR_COUNT];
 CallTipInfo callTipInfo;
 static bool bCustomColorLoaded = false;
 
-int		np2StyleTheme;
+int		np2StyleTheme = StyleTheme_Dark;
 static UINT fStylesModified = STYLESMODIFIED_NONE;
 static bool fWarnedNoIniFile = false;
 static int	defaultBaseFontSize = 11*SC_FONT_SIZE_MULTIPLIER; // 11 pt
@@ -630,7 +631,18 @@ static inline LPCWSTR GetStyleThemeFilePath() noexcept {
 static inline void FindDarkThemeFile(LPWSTR lpszIniFile) noexcept {
 	// relative to program ini file
 	lstrcpy(lpszIniFile, szIniFile);
-	lstrcpy(PathFindFileName(lpszIniFile), L"Notepad4 DarkTheme.ini");
+	WCHAR * const filePart = PathFindFileName(lpszIniFile);
+	static const LPCWSTR kDarkThemeCandidates[] = {
+		L"Notepad DarkTheme.ini",
+		L"Notepad4 DarkTheme.ini",
+	};
+	for (LPCWSTR name : kDarkThemeCandidates) {
+		lstrcpy(filePart, name);
+		if (PathIsFile(lpszIniFile)) {
+			return;
+		}
+	}
+	lstrcpy(filePart, kDarkThemeCandidates[0]);
 }
 
 void Style_LoadTabSettings(LPCEDITLEXER pLex) noexcept {
@@ -789,7 +801,7 @@ void Style_Load() noexcept {
 	int iValue = section.GetInt(L"DefaultScheme", 0);
 	iDefaultLexerIndex = Style_GetMatchLexerIndex(iValue + NP2LEX_TEXTFILE);
 
-	iValue = section.GetInt(L"StyleTheme", StyleTheme_Default);
+	iValue = section.GetInt(L"StyleTheme", StyleTheme_Dark);
 	np2StyleTheme = clamp<int>(iValue, StyleTheme_Default, StyleTheme_Max);
 
 	// auto select
@@ -886,7 +898,7 @@ void Style_Save() noexcept {
 	section.SetString(L"FavoriteSchemes", favoriteSchemesConfig);
 	// default scheme
 	section.SetIntEx(L"DefaultScheme", pLexArray[iDefaultLexerIndex]->rid - NP2LEX_TEXTFILE, 0);
-	section.SetIntEx(L"StyleTheme", np2StyleTheme, StyleTheme_Default);
+	section.SetIntEx(L"StyleTheme", np2StyleTheme, StyleTheme_Dark);
 
 	// auto select
 	section.SetBoolEx(L"AutoSelect", bAutoSelect, true);
@@ -1158,6 +1170,13 @@ void Style_OnStyleThemeChanged(int theme) noexcept {
 	np2StyleTheme = theme;
 	bCustomColorLoaded = false;
 	Style_SetLexer(pLexCurrent, false);
+	const HINSTANCE hInstance = GetWindowInstance(hwndMain);
+	RecreateBars(hwndMain, hInstance);
+	RECT rc;
+	GetClientRect(hwndMain, &rc);
+	SendMessage(hwndMain, WM_SIZE, SIZE_RESTORED, MAKELPARAM(rc.right, rc.bottom));
+	ApplyShellDarkMode(hwndMain, theme == StyleTheme_Dark);
+	PreviewMode_OnThemeChanged();
 }
 
 void Style_UpdateCaret() noexcept {
@@ -1822,6 +1841,8 @@ void Style_SetLexer(PEDITLEXER pLexNew, BOOL bLexerChanged) noexcept {
 	UpdateLineNumberWidth();
 	UpdateBookmarkMarginWidth();
 	UpdateFoldMarginWidth();
+
+	PreviewMode_ApplyForLexer(rid, bLexerChanged != FALSE);
 }
 
 //=============================================================================

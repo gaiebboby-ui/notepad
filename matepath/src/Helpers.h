@@ -282,6 +282,23 @@ extern UINT g_uCurrentDPI;
 // system DPI, same for all monitor.
 extern UINT g_uSystemDPI;
 
+#ifndef NP2_TOOLBAR_UI_SCALE_PERCENT
+#define NP2_TOOLBAR_UI_SCALE_PERCENT	173
+#endif
+
+inline UINT GetToolbarDpi(int autoScaleToolbar) noexcept {
+	if (autoScaleToolbar == 0) {
+		return g_uCurrentDPI;
+	}
+	UINT dpi = MulDiv(g_uCurrentDPI, NP2_TOOLBAR_UI_SCALE_PERCENT, 100);
+#if defined(NP2_ENABLE_HIDPI_IMAGE_RESOURCE) && NP2_ENABLE_HIDPI_IMAGE_RESOURCE
+	if (autoScaleToolbar > USER_DEFAULT_SCREEN_DPI) {
+		dpi += MulDiv(g_uCurrentDPI, autoScaleToolbar - USER_DEFAULT_SCREEN_DPI, USER_DEFAULT_SCREEN_DPI);
+	}
+#endif
+	return dpi;
+}
+
 // since Windows 10, version 1607
 #if _WIN32_WINNT >= _WIN32_WINNT_WIN10
 #define GetWindowDPI(hwnd)					GetDpiForWindow(hwnd)
@@ -443,6 +460,7 @@ struct IniSectionBuilder {
 
 LPWSTR Registry_GetString(HKEY hKey, LPCWSTR valueName) noexcept;
 LSTATUS Registry_SetString(HKEY hKey, LPCWSTR valueName, LPCWSTR lpszText) noexcept;
+void Registry_NotifyAssociationChanged() noexcept;
 #define Registry_GetDefaultString(hKey)				Registry_GetString((hKey), nullptr)
 #define Registry_SetDefaultString(hKey, lpszText)	Registry_SetString((hKey), nullptr, (lpszText))
 inline LSTATUS Registry_CreateKey(HKEY hKey, LPCWSTR lpSubKey, PHKEY phkResult) noexcept {

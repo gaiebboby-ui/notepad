@@ -1,10 +1,10 @@
 /******************************************************************* mode:rc **
 *
 *
-* Notepad4
+* Notepad
 *
 * Notepad4.ver
-*   Notepad4 version information
+*   Notepad version information
 *
 * See Readme.txt for more information about this source code.
 * Please send me your comments to this work.
@@ -50,7 +50,7 @@ BEGIN
       VALUE "FileVersion",      VERSION_FILEVERSION
       VALUE "ProductVersion",   VERSION_FILEVERSION
       VALUE "LegalCopyright",   VERSION_LEGALCOPYRIGHT
-      VALUE "OriginalFilename", "Notepad4.exe"
+      VALUE "OriginalFilename", "Notepad.exe"
     END
   END
   BLOCK "VarFileInfo"

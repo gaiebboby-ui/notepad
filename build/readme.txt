@@ -1,6 +1,31 @@
-Build Notepad4 and matepath
+Build Notepad and matepath (this fork: Notepad.exe, Notepad.ini)
+
+Wiki (this fork):
+	doc\wiki\Build-Notepad.md
+	doc\wiki\CI-CD.md
+	doc\FORK-CHANGES.md
+	doc\Preview-Mode.md
+
+Upstream wiki:
 	https://github.com/zufuliu/notepad4/wiki/Build-Notepad4
 	https://github.com/zufuliu/notepad4/wiki/Localization
+
+Quick MSVC x64 Release:
+	cd build\VisualStudio
+	build.bat Build x64 Release
+
+Locales (all languages):
+	cd locale
+	build.bat Build x64 Release
+	(MSBuild target must be Notepad4_zh-Hans_, not Notepad_zh-Hans_)
+
+Release zip:
+	cd build
+	make_zip.bat MSVC x64 Release Locale
+
+Toolbar bitmaps after icon change:
+	cd tools
+	python build_toolbar.py
 
 echo | clang -dM -E -
 echo | clang-cl -Xclang -dM -E -
@@ -37,9 +62,9 @@ https://learn.microsoft.com/en-us/cpp/sanitizers/asan
 		copy clang_rt.asan_dynamic-x86_64.dll to exe folder
 
 https://github.com/google/sanitizers/wiki/AddressSanitizerFlags#run-time-flags
-SetEnvironmentVariable(UBSAN_OPTIONS, L"log_path=" WC_NOTEPAD4 L"-UBSan.log");
+SetEnvironmentVariable(UBSAN_OPTIONS, L"log_path=" WC_NOTEPAD L"-UBSan.log");
 SetEnvironmentVariable(UBSAN_OPTIONS, L"log_path=" WC_MATEPATH L"-UBSan.log");
-SetEnvironmentVariable(UBSAN_OPTIONS, L"log_path=" WC_NOTEPAD4 L"-UBSan.log,print_stacktrace=1");
+SetEnvironmentVariable(UBSAN_OPTIONS, L"log_path=" WC_NOTEPAD L"-UBSan.log,print_stacktrace=1");
 SetEnvironmentVariable(UBSAN_OPTIONS, L"log_path=" WC_MATEPATH L"-UBSan.log,print_stacktrace=1");
 
 /wd4201 /wd4204 /wd4221

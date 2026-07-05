@@ -277,6 +277,30 @@ LSTATUS Registry_SetString(HKEY hKey, LPCWSTR valueName, LPCWSTR lpszText) noexc
 	return status;
 }
 
+void Registry_NotifyAssociationChanged() noexcept {
+	SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+}
+
+#if _WIN32_WINNT < _WIN32_WINNT_VISTA
+LSTATUS Registry_DeleteTree(HKEY hKey, LPCWSTR lpSubKey) noexcept {
+	using RegDeleteTreeSig = LSTATUS (WINAPI *)(HKEY hKey, LPCWSTR lpSubKey);
+	RegDeleteTreeSig pfnRegDeleteTree = DLLFunctionEx<RegDeleteTreeSig>(L"advapi32.dll", "RegDeleteTreeW");
+
+	LSTATUS status;
+	if (pfnRegDeleteTree != nullptr) {
+		status = pfnRegDeleteTree(hKey, lpSubKey);
+	} else {
+		status = RegDeleteKey(hKey, lpSubKey);
+		if (status != ERROR_SUCCESS && status != ERROR_FILE_NOT_FOUND) {
+			// TODO: Deleting a Key with Subkeys on Windows XP.
+			// https://docs.microsoft.com/en-us/windows/win32/sysinfo/deleting-a-key-with-subkeys
+		}
+	}
+
+	return status;
+}
+#endif
+
 UINT ParseCommaList(LPCWSTR str, int result[], UINT count) noexcept {
 	if (StrIsEmpty(str)) {
 		return 0;
@@ -620,7 +644,7 @@ void CenterDlgInParentEx(HWND hDlg, HWND hParent) noexcept {
 	SetWindowPos(hDlg, nullptr, clamp(x, xMin, xMax), clamp(y, yMin, yMax), 0, 0, SWP_NOZORDER | SWP_NOSIZE);
 }
 
-// Why doesn’t the "Automatically move pointer to the default button in a dialog box"
+// Why doesnвЂ™t the "Automatically move pointer to the default button in a dialog box"
 // work for nonstandard dialog boxes, and how do I add it to my own nonstandard dialog boxes?
 // https://blogs.msdn.microsoft.com/oldnewthing/20130826-00/?p=3413/
 void SnapToDefaultButton(HWND hwndBox) noexcept {

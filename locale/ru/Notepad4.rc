@@ -704,7 +704,7 @@ BEGIN
 			MENUITEM "Использовать встроенный ре&жим IME",						IDM_SET_USE_INLINE_IME
 			MENUITEM SEPARATOR
 			MENUITEM "&Интеграция в систему...",							IDM_SET_SYSTEM_INTEGRATION
-			MENUITEM "&Открыть файл Notepad4.ini\tCtrl+F7",						CMD_OPENINIFILE
+			MENUITEM "&Открыть файл Notepad.ini\tCtrl+F7",						CMD_OPENINIFILE
 		END
 		MENUITEM "Сохранять настройки при в&ыходе",							IDM_VIEW_SAVESETTINGS
 		MENUITEM "Сохранить &настройки сейчас\tF7",							IDM_VIEW_SAVESETTINGSNOW
@@ -823,7 +823,7 @@ BEGIN
 	END
 	POPUP "+"
 	BEGIN
-		MENUITEM "&Открыть Notepad4",									IDM_TRAY_RESTORE
+		MENUITEM "&Открыть Notepad",									IDM_TRAY_RESTORE
 		MENUITEM SEPARATOR
 		MENUITEM "В&ыход",										IDM_TRAY_EXIT
 	END
@@ -1070,7 +1070,7 @@ END
 
 IDD_ABOUT DIALOGEX 0, 0, 255, 144
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "Notepad4"
+CAPTION "Notepad"
 FONT 9, "Segoe UI", 400, 0, 0x1
 BEGIN
     DEFPUSHBUTTON   "OK",IDOK,142,123,50,14
@@ -1196,7 +1196,7 @@ CAPTION "Интеграция в систему"
 FONT 9, "Segoe UI", 400, 0, 0x1
 BEGIN
     GROUPBOX        "Интеграция в систему (требуются права администратора)",IDC_GROUP_SYSTEM_INTEGRATION,7,7,232,84
-    AUTOCHECKBOX    "Добавить Notepad4 в контекстное меню Проводника Windows",IDC_ENABLE_CONTEXT_MENU,14,20,212,10,WS_TABSTOP
+    AUTOCHECKBOX    "Добавить Notepad в контекстное меню Проводника Windows",IDC_ENABLE_CONTEXT_MENU,14,20,212,10,WS_TABSTOP
     LTEXT           "Текст в меню:",IDC_STATIC,28,35,88,8
     EDITTEXT        IDC_CONTEXT_MENU_TEXT,122,32,106,14,ES_AUTOHSCROLL | WS_TABSTOP
     AUTOCHECKBOX    "Список переходов на панели задач",IDC_ENABLE_JUMP_LIST,14,48,204,10,WS_TABSTOP
@@ -1537,7 +1537,7 @@ END
 
 IDD_INFOBOX DIALOGEX 0, 0, 244, 74
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "Notepad4"
+CAPTION "Notepad"
 FONT 9, "Segoe UI", 400, 0, 0x1
 BEGIN
     LTEXT           "",IDC_INFOBOXRECT,0,0,244,49
@@ -1722,9 +1722,9 @@ END
 
 STRINGTABLE
 BEGIN
-    IDS_APPTITLE            "Notepad4"
+    IDS_APPTITLE            "Notepad"
     IDS_APPTITLE_ELEVATED   "%s (администратор)"
-    IDS_APPTITLE_PASTEBOARD "Notepad4: Paste Board"
+    IDS_APPTITLE_PASTEBOARD "Notepad: Paste Board"
     IDS_UNTITLED            "Безымянный"
     IDS_TITLEEXCERPT        """%s"""
     IDS_READONLY_FILE       "(файл только для чтения)"
@@ -1736,7 +1736,7 @@ BEGIN
     IDS_SAVEFILE            "Сохранение ""%s""..."
     IDS_PRINTFILE           "Печать страницы %s..."
     IDS_SAVINGSETTINGS      "Сохранение настроек..."
-    IDS_LINKDESCRIPTION     "Редактировать в Notepad&4"
+    IDS_LINKDESCRIPTION     "Редактировать в &Notepad"
     IDS_FILTER_ALL          "Все файлы (*.*)|*.*|"
     IDS_FILTER_EXE          "Исполняемые файлы (*.exe;*.com;*.bat;*.cmd;*.lnk;*.pif)|*.exe;*.com;*.bat;*.cmd;*.lnk;*.pif|Все файлы (*.*)|*.*|"
 END
@@ -1834,7 +1834,7 @@ BEGIN
     IDS_ERR_BROWSE          "Не найден плагин для просмотра файлов.\nПлагин matepath для просмотра файлов доступен здесь:\nhttps://github.com/zufuliu/notepad4/releases.\n\nОткрыть страницу загрузки?"
     IDS_ERR_MRUDLG          "Нет доступа к выбранному файлу!\nУдалить его из списка?"
     IDS_ERR_CREATELINK      "Ошибка создания ярлыка на рабочем столе."
-    IDS_ERR_PREVWINDISABLED "Существующее окно Notepad4 занято или имеет активное диалоговое окно.\nОткрыть другое окно Notepad4?"
+    IDS_ERR_PREVWINDISABLED "Существующее окно Notepad занято или имеет активное диалоговое окно.\nОткрыть другое окно Notepad?"
     IDS_SELRECT             "Эта операция не может быть выполнена в пределах прямоугольного выделения."
     IDS_BUFFERTOOSMALL      "Эта операция не может быть выполнена (слишком длинные строки)."
     IDS_FIND_WRAPFW         "Достигнут конец документа, повтор поиска с начала."
@@ -1847,7 +1847,7 @@ BEGIN
     IDS_ERR_UNICODE         "Ошибка преобразования этого юникодного файла.\nПри сохранении файла данные будут утеряны!"
     IDS_BINARY_FILE_OPENED  "Скорее всего, этот файл не текстовый, поэтому он будет открыт только для чтения,\nчтобы предотвратить неосторожное редактирование, ведущее к повреждению файла."
 #if NP2_ENABLE_APP_LOCALIZATION_DLL
-    IDS_CHANGE_LANG_RESTART "Для изменения языка интерфейса требуется перезапустить Notepad4. Сделать это сейчас?"
+    IDS_CHANGE_LANG_RESTART "Для изменения языка интерфейса требуется перезапустить Notepad. Сделать это сейчас?"
 #endif
 END
 

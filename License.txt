@@ -1,11 +1,11 @@
 ================================================================================
-Notepad4, matepath, Notepad2, metapath and Notepad2-mod are licensed under the BSD 3-Clause License
+Notepad, matepath, Notepad2, metapath and Notepad2-mod are licensed under the BSD 3-Clause License
 ================================================================================
 
 https://www.flos-freeware.ch
 https://xhmikosr.github.io/notepad2-mod/
 
-Notepad4 Copyright © 2011-2026 Zufu Liu and All contributors.
+Notepad Copyright © 2011-2026 Zufu Liu and All contributors.
 matepath Copyright © 2011-2026 Zufu Liu and All contributors.
 Notepad2-mod Copyright © 2010-2017 XhmikosR and All contributors.
 Notepad2 Copyright © 2004-2012 Florian Balmer.

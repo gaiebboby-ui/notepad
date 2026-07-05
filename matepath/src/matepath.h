@@ -21,7 +21,7 @@
 
 //==== Main Window ============================================================
 #define WC_MATEPATH L"matepath"
-#define WC_NOTEPAD4 L"Notepad4"
+#define WC_NOTEPAD L"Notepad"
 #define MY_APPUSERMODELID	L"matepath File Browser"
 
 #define WS_MATEPATH ((WS_OVERLAPPEDWINDOW ^ \
@@ -172,6 +172,8 @@ LRESULT MsgCreate(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept;
 void CreateBars(HWND hwnd, HINSTANCE hInstance) noexcept;
 void MsgDPIChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept;
 void MsgThemeChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept;
+void Matepath_ApplyShellDarkMode(HWND hwnd) noexcept;
+bool Matepath_IsDarkTheme() noexcept;
 void MsgSize(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept;
 void MsgInitMenu(HWND hwnd, WPARAM wParam, LPARAM lParam);
 LRESULT MsgCommand(HWND hwnd, WPARAM wParam, LPARAM lParam);

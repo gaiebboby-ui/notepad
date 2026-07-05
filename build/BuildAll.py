@@ -133,8 +133,8 @@ def prepare_build_environment():
 	if not os.path.exists(zipDir):
 		os.makedirs(zipDir)
 	for path in ['../License.txt',
-		'../doc/Notepad4.ini',
-		'../doc/Notepad4 DarkTheme.ini',
+		'../doc/Notepad.ini',
+		'../doc/Notepad DarkTheme.ini',
 		'../matepath/doc/matepath.ini']:
 		target = os.path.join(zipDir, os.path.basename(path))
 		if target.endswith('.ini'):
@@ -207,10 +207,10 @@ def make_release_artifact(locale, suffix='', hd=False):
 		archList.remove('Win32')
 	for arch in archList:
 		folder = os.path.join(outDir, arch)
-		notepad4_exe = os.path.join(folder, 'Notepad4.exe')
+		notepad4_exe = os.path.join(folder, 'Notepad.exe')
 		matepath_exe = os.path.join(folder, 'matepath.exe')
 		if os.path.isfile(notepad4_exe) and os.path.isfile(matepath_exe):
-			shutil.copyfile(notepad4_exe, os.path.join(zipDir, 'Notepad4.exe'))
+			shutil.copyfile(notepad4_exe, os.path.join(zipDir, 'Notepad.exe'))
 			shutil.copyfile(matepath_exe, os.path.join(zipDir, 'matepath.exe'))
 			target = os.path.join(zipDir, 'locale')
 			if os.path.exists(target):
@@ -219,7 +219,7 @@ def make_release_artifact(locale, suffix='', hd=False):
 				path = os.path.join(folder, 'locale')
 				if os.path.isdir(path):
 					shutil.copytree(path, target, copy_function=shutil.copyfile)
-			name = f'Notepad4_{suffix + locale}_{arch}_{app_version}.zip'
+			name = f'Notepad_{suffix + locale}_{arch}_{app_version}.zip'
 			print('make:', name)
 			path = os.path.join(buildFolder, name)
 			zip_folder_inner(zipDir, path)

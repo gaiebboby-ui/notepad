@@ -1723,7 +1723,7 @@ static bool EditCompleteWordCore(int iCondition, bool autoInsert) noexcept {
 #if 0
 	watch.Stop();
 	const double elapsed = watch.Get();
-	printf("Notepad4 AddDocWord(%u, %u): %.6f\n", pWList.nWordCount, pWList.nTotalLen, elapsed);
+	printf("Notepad AddDocWord(%u, %u): %.6f\n", pWList.nWordCount, pWList.nTotalLen, elapsed);
 #endif
 
 	const bool bShow = pWList.nWordCount > 0 && !(pWList.nWordCount == 1 && pWList.nTotalLen == static_cast<UINT>(iRootLen + 1));

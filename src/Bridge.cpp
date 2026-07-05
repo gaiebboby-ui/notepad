@@ -1,7 +1,7 @@
 /******************************************************************************
 *
 *
-* Notepad4
+* Notepad
 *
 * Bridge.cpp
 *   Functionalities implemented in C++:

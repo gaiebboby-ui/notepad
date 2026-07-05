@@ -1,10 +1,10 @@
 /******************************************************************************
 *
 *
-* Notepad4
+* Notepad
 *
 * Dialogs.cpp
-*   Notepad4 dialog boxes implementation
+*   Notepad dialog boxes implementation
 *
 * See Readme.txt for more information about this source code.
 * Please send me your comments to this work.
@@ -35,6 +35,7 @@
 #include "Styles.h"
 #include "Dlapi.h"
 #include "Dialogs.h"
+#include "DarkMode.h"
 #include "resource.h"
 #include "Version.h"
 
@@ -427,7 +428,7 @@ static INT_PTR CALLBACK RunDlgProc(HWND hwnd, UINT umsg, WPARAM wParam, LPARAM l
 					lstrcpy(arg2, wchDirectory);
 				}
 
-				if (StrCaseEqual(arg1, L"Notepad4") || StrCaseEqual(arg1, L"Notepad4.exe")) {
+				if (StrCaseEqual(arg1, L"Notepad") || StrCaseEqual(arg1, L"Notepad.exe")) {
 					GetModuleFileName(nullptr, arg1, COUNTOF(arg1));
 					bQuickExit = true;
 				}
@@ -2366,13 +2367,13 @@ INT_PTR CALLBACK InfoBoxDlgProc(HWND hwnd, UINT umsg, WPARAM wParam, LPARAM lPar
 	return TRUE;
 
 	case WM_CTLCOLORSTATIC: {
-		const DWORD dwId = GetWinCtrlID(AsPointer<HWND>(lParam));
-
-		if (dwId >= IDC_INFOBOXRECT && dwId <= IDC_INFOBOXTEXT) {
-			HDC hdc = AsPointer<HDC>(wParam);
-			SetBkMode(hdc, TRANSPARENT);
-			return AsInteger<LONG_PTR>(GetSysColorBrush(COLOR_WINDOW));
+		HDC hdc = AsPointer<HDC>(wParam);
+		if (DarkMode_IsWindowDark(hwnd) || (np2StyleTheme == StyleTheme_Dark && DarkMode_ShouldApply(true))) {
+			DarkMode_HandleCtlColor(hdc, true);
+			return AsInteger<LONG_PTR>(DarkMode_GetCtlColorBrush(true));
 		}
+		SetBkMode(hdc, TRANSPARENT);
+		return AsInteger<LONG_PTR>(GetSysColorBrush(COLOR_WINDOW));
 	}
 	break;
 
@@ -2481,21 +2482,21 @@ INT_PTR InfoBox(UINT uType, LPCWSTR lpstrSetting, UINT uidMessage, ...) noexcept
 }
 
 /*
-HKEY_CLASSES_ROOT\*\shell\Notepad4
-	(Default)				REG_SZ		Edit with Notepad4
-	icon					REG_SZ		Notepad4.exe
+HKEY_CLASSES_ROOT\*\shell\Notepad
+	(Default)				REG_SZ		Edit with Notepad
+	icon					REG_SZ		Notepad.exe
 	command
-		(Default)			REG_SZ		"Notepad4.exe" "%1"
+		(Default)			REG_SZ		"Notepad.exe" "%1"
 
-HKEY_CLASSES_ROOT\Applications\Notepad4.exe
-	AppUserModelID			REG_SZ		Notepad4 Text Editor
-	FriendlyAppName			REG_SZ		Notepad4 Text Editor
+HKEY_CLASSES_ROOT\Applications\Notepad.exe
+	AppUserModelID			REG_SZ		Notepad Text Editor
+	FriendlyAppName			REG_SZ		Notepad Text Editor
 	shell\open\command
-		(Default)			REG_SZ		"Notepad4.exe" "%1"
+		(Default)			REG_SZ		"Notepad.exe" "%1"
 
 HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\notepad.exe
-	(Default)				REG_SZ			Notepad4.exe
-	Debugger								REG_SZ		"Notepad4.exe" /z
+	(Default)				REG_SZ			Notepad.exe
+	Debugger								REG_SZ		"Notepad.exe" /z
 	UseFilter								REG_DWORD	0
 */
 extern bool fIsElevated;
@@ -2595,8 +2596,8 @@ void UpdateSystemIntegrationStatus(int mask, LPCWSTR lpszText, LPCWSTR lpszName)
 	wsprintf(command, L"\"%s\" \"%%1\"", tchModule);
 
 	// context menu
-	// delete the old one: HKEY_CLASSES_ROOT\*\shell\Notepad4.exe
-	//RegDeleteTree(HKEY_CLASSES_ROOT, NP2RegSubKey_ContextMenu L".exe");
+	// delete the old one: HKEY_CLASSES_ROOT\*\shell\Notepad.exe
+	//Registry_DeleteTree(HKEY_CLASSES_ROOT, NP2RegSubKey_ContextMenu L".exe");
 	if (mask & SystemIntegration_ContextMenu) {
 		HKEY hSubKey;
 		const LSTATUS status = Registry_CreateKey(HKEY_CLASSES_ROOT, NP2RegSubKey_ContextMenu L"\\command", &hSubKey);
@@ -2622,6 +2623,7 @@ void UpdateSystemIntegrationStatus(int mask, LPCWSTR lpszText, LPCWSTR lpszName)
 			RegOpenKeyEx(HKEY_CLASSES_ROOT, NP2RegSubKey_JumpList, 0, KEY_WRITE, &hKey);
 			Registry_SetString(hKey, L"AppUserModelID", g_wchAppUserModelID);
 			Registry_SetString(hKey, L"FriendlyAppName", lpszName);
+			Registry_UpdateApplicationSupportedTypes(hKey, NP2_FILE_ASSOCIATIONS);
 			Registry_SetDefaultString(hSubKey, command);
 			RegCloseKey(hKey);
 			RegCloseKey(hSubKey);
@@ -2678,30 +2680,42 @@ void UpdateSystemIntegrationStatus(int mask, LPCWSTR lpszText, LPCWSTR lpszName)
 			Registry_SetInt(hKey, L"UseFilter", 1);
 			Registry_SetInt(hKey, L"AppExecutionAliasRedirect", 1);
 			Registry_SetString(hKey, L"AppExecutionAliasRedirectPackages", L"*");
-#if 0
-			GetWindowsDirectory(tchModule, COUNTOF(tchModule));
-			LPCWSTR const suffix[] = {
-				L"System32\\notepad.exe",
-				L"SysWOW64\\notepad.exe",
-				L"notepad.exe",
-			};
-			WCHAR num[2] = { L'0', L'\0' };
-			for (int index = 0; index < 3; index++, num[0]++) {
-				HKEY hSubKey;
-				status = RegOpenKeyEx(hKey, num, 0, KEY_WRITE, &hSubKey);
-				if (status == ERROR_SUCCESS) {
-					PathCombine(command, tchModule, suffix[index]);
-					Registry_SetInt(hSubKey, L"AppExecutionAliasRedirect", 1);
-					Registry_SetString(hSubKey, L"AppExecutionAliasRedirectPackages", L"*");
-					Registry_SetString(hSubKey, L"FilterFullPath", command);
-					RegCloseKey(hSubKey);
+			if (DarkMode_GetWindowsBuild() >= NP2_WIN11_BUILD) {
+				WCHAR wchWinDir[MAX_PATH];
+				GetWindowsDirectory(wchWinDir, COUNTOF(wchWinDir));
+				LPCWSTR const suffix[] = {
+					L"System32\\notepad.exe",
+					L"SysWOW64\\notepad.exe",
+					L"notepad.exe",
+				};
+				WCHAR wchFilter[MAX_PATH];
+				WCHAR num[2] = { L'0', L'\0' };
+				for (int index = 0; index < 3; index++, num[0]++) {
+					HKEY hSubKey;
+					const LSTATUS subStatus = RegOpenKeyEx(hKey, num, 0, KEY_WRITE, &hSubKey);
+					if (subStatus == ERROR_SUCCESS) {
+						PathCombine(wchFilter, wchWinDir, suffix[index]);
+						Registry_SetInt(hSubKey, L"AppExecutionAliasRedirect", 1);
+						Registry_SetString(hSubKey, L"AppExecutionAliasRedirectPackages", L"*");
+						Registry_SetString(hSubKey, L"FilterFullPath", wchFilter);
+						RegCloseKey(hSubKey);
+					}
 				}
 			}
-#endif
 			RegCloseKey(hKey);
 		}
 #endif
 	}
+
+	const bool shellIntegration = (mask & (SystemIntegration_ContextMenu | SystemIntegration_JumpList)) != 0;
+	if (shellIntegration) {
+		Registry_UpdateDefaultProgramsRegistration(true, lpszName, NP2_FILE_ASSOCIATIONS);
+		Registry_UpdateProgIdRegistration(true, lpszName, tchModule, command);
+	} else {
+		Registry_UpdateDefaultProgramsRegistration(false, nullptr, nullptr);
+		Registry_UpdateProgIdRegistration(false, nullptr, nullptr, nullptr);
+	}
+	Registry_NotifyAssociationChanged();
 }
 
 INT_PTR CALLBACK SystemIntegrationDlgProc(HWND hwnd, UINT umsg, WPARAM wParam, LPARAM lParam) noexcept {

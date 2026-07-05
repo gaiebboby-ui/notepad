@@ -1,6 +1,6 @@
 /******************************************************************************
 *
-* Notepad4
+* Notepad
 *
 * Version.h
 *
@@ -18,8 +18,8 @@
 #define DO_STRINGIFY(x)		TEXT(#x)
 #define STRINGIFY(x)		DO_STRINGIFY(x)
 
-#define MY_APPNAME					L"Notepad4"
-#define MY_APPNAME_DESCRIPTION		L"Notepad4 Text Editor"
+#define MY_APPNAME					L"Notepad"
+#define MY_APPNAME_DESCRIPTION		L"Notepad Text Editor"
 #define VERSION_FILEVERSION_NUM		VERSION_MINOR,VERSION_BUILD_NUM,0,VERSION_REV
 #define VERSION_FILEVERSION			STRINGIFY(VERSION_MINOR) "." \
 									STRINGIFY(VERSION_BUILD) "." STRINGIFY(VERSION_REV)

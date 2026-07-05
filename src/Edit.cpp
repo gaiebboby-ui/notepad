@@ -1,7 +1,7 @@
 /******************************************************************************
 *
 *
-* Notepad4
+* Notepad
 *
 * Edit.cpp
 *   Text File Editing Helper Stuff

@@ -103,7 +103,7 @@ IF /I "%ARCH%" == "ARM64" GOTO END
 
 
 :END
-TITLE Building Notepad4 DLL with MSVC - Finished!
+TITLE Building Notepad DLL with MSVC - Finished!
 ENDLOCAL
 EXIT /B
 
@@ -132,7 +132,7 @@ EXIT /B
 
 :SUBMSVC
 ECHO.
-TITLE Building Notepad4 DLL with MSVC - %~1 "%~2|%~3"...
+TITLE Building Notepad DLL with MSVC - %~1 "%~2|%~3"...
 CD /D %~dp0
 "MSBuild.exe" /nologo Locale.sln /target:Notepad4_zh-Hans_;%~1 /property:Configuration=%~2;Platform=%~3^ /consoleloggerparameters:Verbosity=minimal /maxcpucount /nodeReuse:true
 IF %ERRORLEVEL% NEQ 0 CALL :SUBMSG "ERROR" "Compilation failed!"

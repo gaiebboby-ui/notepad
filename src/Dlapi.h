@@ -1,7 +1,7 @@
 /******************************************************************************
 *
 *
-* Notepad4
+* Notepad
 *
 * Dlapi.h
 *   Definitions for Directory Listing APIs

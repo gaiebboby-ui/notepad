@@ -1,4 +1,4 @@
-// This file is part of Notepad4.
+// This file is part of Notepad.
 // See License.txt for details about distribution and modification.
 #pragma once
 
@@ -87,4 +87,9 @@ inline void* AsVoidPointer(T** pp) noexcept {
 #endif
 #ifndef _WIN32_WINNT_WIN10
 #define _WIN32_WINNT_WIN10				0x0A00
+#endif
+
+// Minimum supported Windows 10 21H2
+#ifndef NP2_MIN_WINDOWS_BUILD
+#define NP2_MIN_WINDOWS_BUILD			19044
 #endif

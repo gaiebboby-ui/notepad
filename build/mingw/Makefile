@@ -78,32 +78,21 @@ endif
 # llvm-mingw uses libc++, which requires Windows 7+.
 ifeq ($(ARCH), x64)
 	export RCFLAGS += -D_WIN64
-	ifdef WIN7
-		export CPPFLAGS += -D_WIN64 -D_WIN32_WINNT=0x0601 -DWINVER=0x0601
-		export LDFLAGS += -Wl,--major-os-version,6 -Wl,--minor-os-version,1
-		ifndef LLD
-			export LDFLAGS += -Wl,--subsystem,windows:6.01
-		endif
-	else
-		# Windows Vista, Windows Server 2008
-		export CPPFLAGS += -D_WIN64 -D_WIN32_WINNT=0x0600 -DWINVER=0x0600
-		export LDFLAGS += -Wl,--major-os-version,6 -Wl,--minor-os-version,0
-		ifndef LLD
-			export LDFLAGS += -Wl,--subsystem,windows:6.00
-		endif
+	export CPPFLAGS += -D_WIN64 -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00
+	export LDFLAGS += -Wl,--major-os-version,10 -Wl,--minor-os-version,0
+	ifndef LLD
+		export LDFLAGS += -Wl,--subsystem,windows:10.00
 	endif
 else ifeq ($(ARCH), AVX2)
-	# Windows 7 SP1, Windows Server 2008 R2 SP1, 64-bit only
 	export CFLAGS += -march=x86-64-v3
 	export CXXFLAGS += -march=x86-64-v3
 	export RCFLAGS += -D_WIN64
-	export CPPFLAGS += -D_WIN64 -D_WIN32_WINNT=0x0601 -DWINVER=0x0601
-	export LDFLAGS += -march=x86-64-v3 -Wl,--major-os-version,6 -Wl,--minor-os-version,1
+	export CPPFLAGS += -D_WIN64 -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00
+	export LDFLAGS += -march=x86-64-v3 -Wl,--major-os-version,10 -Wl,--minor-os-version,0
 	ifndef LLD
-		export LDFLAGS += -Wl,--subsystem,windows:6.01
+		export LDFLAGS += -Wl,--subsystem,windows:10.00
 	endif
 else ifeq ($(ARCH), AVX512)
-	# Windows 10, Windows Server 2019, 64-bit only
 	export CFLAGS += -march=x86-64-v4
 	export CXXFLAGS += -march=x86-64-v4
 	export RCFLAGS += -D_WIN64
@@ -112,31 +101,8 @@ else ifeq ($(ARCH), AVX512)
 	ifndef LLD
 		export LDFLAGS += -Wl,--subsystem,windows:10.00
 	endif
-else ifeq ($(ARCH), Win32)
-	export CFLAGS += -msse2 -mfpmath=sse
-	export CXXFLAGS += -msse2 -mfpmath=sse
-	export RCFLAGS += -DWIN32
-	ifdef WIN7
-		export CPPFLAGS += -DWIN32 -D_WIN32_WINNT=0x0601 -DWINVER=0x0601
-		export LDFLAGS += -msse2 -mfpmath=sse -Wl,--major-os-version,6 -Wl,--minor-os-version,1
-		ifndef LLD
-			export LDFLAGS += -Wl,--subsystem,windows:6.01
-		endif
-	else
-		# Windows Vista, Windows Server 2008
-		export CPPFLAGS += -DWIN32 -D_WIN32_WINNT=0x0600 -DWINVER=0x0600
-		export LDFLAGS += -msse2 -mfpmath=sse -Wl,--major-os-version,6 -Wl,--minor-os-version,0
-		ifndef LLD
-			export LDFLAGS += -Wl,--subsystem,windows:6.00
-		endif
-	endif
-else ifeq ($(ARCH), ARM64)
-	# Windows 10 1709, requires llvm-mingw.
-	export CPPFLAGS += -D_WIN64 -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00
-	export RCFLAGS += -D_WIN64
-	export LDFLAGS += -Wl,--major-os-version,10 -Wl,--minor-os-version,0
 else
-	$(error '$(ARCH)' is not supported)
+	$(error '$(ARCH)' is not supported; use x64, AVX2, or AVX512)
 endif
 
 # lld linker doesn't need/support subsystem version.

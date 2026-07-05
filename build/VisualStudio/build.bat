@@ -1,10 +1,10 @@
 @ECHO OFF
 @rem ******************************************************************************
 @rem *
-@rem * Notepad4
+@rem * Notepad
 @rem *
 @rem * build.bat
-@rem *   Batch file used to build Notepad4 with MSVC 2019, 2022, 2026
+@rem *   Batch file used to build Notepad with MSVC 2019, 2022, 2026
 @rem *
 @rem * See License.txt for details about distribution and modification.
 @rem *
@@ -120,7 +120,7 @@ IF /I "%ARCH%" == "ARM64" GOTO END
 
 
 :END
-TITLE Building Notepad4 with MSVC - Finished!
+TITLE Building Notepad with MSVC - Finished!
 ENDLOCAL
 EXIT /B
 
@@ -149,10 +149,44 @@ EXIT /B
 
 :SUBMSVC
 ECHO.
-TITLE Building Notepad4 with MSVC - %~1 "%~2|%~3"...
+TITLE Building Notepad with MSVC - %~1 "%~2|%~3"...
 CD /D %~dp0
-"MSBuild.exe" /nologo Notepad4.sln /target:Notepad4;%~1 /property:Configuration=%~2;Platform=%~3^ /consoleloggerparameters:Verbosity=minimal /maxcpucount /nodeReuse:true
+"MSBuild.exe" /nologo Notepad4.sln /target:Notepad;%~1 /property:Configuration=%~2;Platform=%~3^ /consoleloggerparameters:Verbosity=minimal /maxcpucount /nodeReuse:true
 IF %ERRORLEVEL% NEQ 0 CALL :SUBMSG "ERROR" "Compilation failed!"
+IF /I "%~2" == "Release" IF /I "%~3" == "x64" (
+	CALL :SUBCOPY_DOCS %~2 %~3
+	CALL :SUBLOCALE_RU %~2 %~3
+)
+EXIT /B
+
+
+:SUBCOPY_DOCS
+SET "OUTDIR=..\bin\%~1\%~2"
+IF EXIST "..\..\doc\Notepad.ini" (
+	COPY /Y "..\..\doc\Notepad.ini" "%OUTDIR%\Notepad.ini-default" >NUL
+)
+IF EXIST "..\..\doc\Notepad DarkTheme.ini" (
+	COPY /Y "..\..\doc\Notepad DarkTheme.ini" "%OUTDIR%\Notepad DarkTheme.ini-default" >NUL
+	COPY /Y "..\..\doc\Notepad DarkTheme.ini" "%OUTDIR%\Notepad DarkTheme.ini" >NUL
+)
+EXIT /B
+
+
+:SUBLOCALE_RU
+ECHO.
+TITLE Building Russian locale DLLs
+CD /D %~dp0..\..\locale
+"MSBuild.exe" /nologo "ru\Notepad4(ru).vcxproj" /property:Configuration=%~1 /property:Platform=%~2 /consoleloggerparameters:Verbosity=minimal /maxcpucount /nodeReuse:true
+IF %ERRORLEVEL% NEQ 0 (
+	CD /D %~dp0
+	CALL :SUBMSG "ERROR" "Russian locale build failed!"
+)
+"MSBuild.exe" /nologo "ru\matepath(ru).vcxproj" /property:Configuration=%~1 /property:Platform=%~2 /consoleloggerparameters:Verbosity=minimal /maxcpucount /nodeReuse:true
+IF %ERRORLEVEL% NEQ 0 (
+	CD /D %~dp0
+	CALL :SUBMSG "ERROR" "Russian locale build failed!"
+)
+CD /D %~dp0
 EXIT /B
 
 

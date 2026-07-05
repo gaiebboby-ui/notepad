@@ -1,7 +1,7 @@
 /******************************************************************************
 *
 *
-* Notepad4
+* Notepad
 *
 * SciCall.h
 *   Inline wrappers for Scintilla API calls, arranged in the order and grouping

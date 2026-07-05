@@ -1,10 +1,10 @@
 /******************************************************************************
 *
 *
-* Notepad4
+* Notepad
 *
 * Dlapi.cpp
-*   Directory Listing APIs used in Notepad4
+*   Directory Listing APIs used in Notepad
 *
 * See Readme.txt for more information about this source code.
 * Please send me your comments to this work.

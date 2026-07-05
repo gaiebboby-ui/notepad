@@ -265,6 +265,7 @@ def make_notepad4_toolbar_bitmap(size):
 		f'{images}/Launch.png',			# IDT_FILE_LAUNCH
 		f'{images}/AlwaysOnTop.png',	# IDT_VIEW_ALWAYSONTOP
 		f'{images}/NewWindow.png',		# IDT_FILE_NEWWINDOW
+		f'{images}/Preview.png',		# IDT_VIEW_PREVIEW
 	], f'Toolbar{size}.bmp')
 
 def make_all_notepad4_toolbar_bitmap():
@@ -287,7 +288,7 @@ def make_other_bitmap():
 		concat_horizontal([f'{images}/Encoding.png', f'{images}/EncodingGray.png'], f'Encoding{size}.bmp', colorDepth)
 
 def make_notepad4_icon_and_cursor():
-	folder = 'images/icon/Notepad4'
+	folder = 'images/icon/Notepad'
 	Icon.makeIcon([
 		(f'{folder}/16.png', 32), (f'{folder}/20.png', 32), (f'{folder}/24.png', 32),
 		(f'{folder}/32.png', 32), (f'{folder}/40.png', 32), (f'{folder}/48.png', 32),

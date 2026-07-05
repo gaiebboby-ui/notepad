@@ -35,6 +35,7 @@
 #include "Dlapi.h"
 #include "Dialogs.h"
 #include "matepath.h"
+#include "../../src/DarkMode.h"
 #include "resource.h"
 
 /******************************************************************************
@@ -302,6 +303,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 
 	// Set global variable g_hInstance
 	g_hInstance = hInstance;
+	DarkMode_SetLogAppName(L"matepath");
+	DarkMode_Init();
+	if (!DarkMode_VerifyMinimumWindowsVersion()) {
+		MessageBoxW(nullptr,
+			L"matepath requires Windows 10 version 21H2 (build 19044) or later.",
+			WC_MATEPATH, MB_ICONERROR | MB_OK);
+		return 1;
+	}
 #if NP2_ENABLE_APP_LOCALIZATION_DLL
 	g_exeInstance = hInstance;
 #endif
@@ -323,6 +332,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 	ParseCommandLine();
 	FindIniFile();
 	LoadFlags();
+	DarkMode_WriteStartupLog(L"matepath", Matepath_IsDarkTheme() ? 1 : 0);
+	DarkMode_SetPreferredAppMode(DarkMode_ShouldApply(Matepath_IsDarkTheme()));
 
 	// Try to activate another window
 	if (ActivatePrevInst()) {
@@ -489,6 +500,7 @@ void InitInstance(HINSTANCE hInstance, int nCmdShow) {
 		ShowWindow(hwnd, SW_HIDE);   // trick ShowWindow()
 		ShowNotifyIcon(hwnd, true);
 	}
+	Matepath_ApplyShellDarkMode(hwnd);
 
 	// Pathname parameter
 	if (lpPathArg) {
@@ -564,6 +576,25 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT umsg, WPARAM wParam, LPARAM lParam)
 	case WM_DPICHANGED:
 		MsgDPIChanged(hwnd, wParam, lParam);
 		break;
+
+	case WM_ACTIVATE:
+		if (LOWORD(wParam) != WA_INACTIVE) {
+			Matepath_ApplyShellDarkMode(hwnd);
+		}
+		break;
+
+	case WM_ERASEBKGND:
+		if (Matepath_IsDarkTheme() && DarkMode_ShouldApply(true)) {
+			RECT rc;
+			GetClientRect(hwnd, &rc);
+			FillRect(AsPointer<HDC>(wParam), &rc, DarkMode_GetCtlColorBrush(true));
+			return TRUE;
+		}
+		return DefWindowProc(hwnd, umsg, wParam, lParam);
+
+	case WM_UAHDRAWMENU:
+	case WM_UAHDRAWMENUITEM:
+		return DarkMode_HandleMenuDraw(hwnd, umsg, wParam, lParam, Matepath_IsDarkTheme());
 
 	// update colors of DirList manually
 	case WM_SYSCOLORCHANGE: {
@@ -891,11 +922,7 @@ void CreateBars(HWND hwnd, HINSTANCE hInstance) noexcept {
 
 	bool internalBitmap = false;
 	const int scale = iAutoScaleToolbar;
-#if NP2_ENABLE_HIDPI_IMAGE_RESOURCE
-	const UINT dpi = (scale > USER_DEFAULT_SCREEN_DPI) ? (g_uCurrentDPI + scale - USER_DEFAULT_SCREEN_DPI) : g_uCurrentDPI;
-#else
-	const UINT dpi = g_uCurrentDPI;
-#endif
+	const UINT dpi = GetToolbarDpi(scale);
 	// Add normal Toolbar Bitmap
 	HBITMAP hbmp = nullptr;
 	if (tchToolbarBitmap != nullptr) {
@@ -918,7 +945,8 @@ void CreateBars(HWND hwnd, HINSTANCE hInstance) noexcept {
 
 	if (internalBitmap) {
 		HBITMAP hbmpCopy = static_cast<HBITMAP>(CopyImage(hbmp, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION));
-		const bool fProcessed = BitmapAlphaBlend(hbmpCopy, GetSysColor(COLOR_3DFACE), 0x60);
+		const bool darkShell = Matepath_IsDarkTheme();
+		const bool fProcessed = BitmapAlphaBlend(hbmpCopy, DarkMode_GetShellBackgroundColor(darkShell), 0x60);
 		if (fProcessed) {
 			himl = ImageList_Create(bmp.bmHeight, bmp.bmHeight, ILC_COLOR32 | ILC_MASK, 0, 0);
 			ImageList_AddMasked(himl, hbmpCopy, CLR_DEFAULT);
@@ -1005,6 +1033,7 @@ void CreateBars(HWND hwnd, HINSTANCE hInstance) noexcept {
 
 	cyReBarFrame = bIsAppThemed ? 0 : 2;
 	cyDriveBoxFrame = bIsAppThemed ? 0 : 2;
+	Matepath_ApplyShellDarkMode(hwnd);
 }
 
 void RecreateBars(HWND hwnd, HINSTANCE hInstance) noexcept {
@@ -1034,12 +1063,13 @@ void MsgDPIChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept {
 	const int cy = rc->bottom - rc->top;
 	SetWindowPos(hwnd, nullptr, rc->left, rc->top, cx, cy, SWP_NOZORDER | SWP_NOACTIVATE);
 	if (bShowToolbar) {
-		// on Window 8.1 when move Notepad4 to another monitor with same scaling settings
+		// on Window 8.1 when move Notepad to another monitor with same scaling settings
 		// WM_DPICHANGED is sent with same DPI, and WM_SIZE is not sent after WM_DPICHANGED.
 		SetWindowPos(hwndReBar, nullptr, 0, 0, cx, cyReBar, SWP_NOZORDER);
 	}
 
 	StatusSetText(hwndStatus, ID_FILEINFO, chStatus);
+	Matepath_ApplyShellDarkMode(hwnd);
 }
 
 //=============================================================================
@@ -1050,6 +1080,10 @@ void MsgDPIChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept {
 void MsgThemeChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept {
 	UNREFERENCED_PARAMETER(wParam);
 	UNREFERENCED_PARAMETER(lParam);
+
+	if (DarkMode_IsApplying()) {
+		return;
+	}
 
 	HINSTANCE hInstance = GetWindowInstance(hwnd);
 
@@ -1072,6 +1106,44 @@ void MsgThemeChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept {
 	GetClientRect(hwnd, &rc);
 	SendMessage(hwnd, WM_SIZE, SIZE_RESTORED, MAKELPARAM(rc.right, rc.bottom));
 	StatusSetText(hwndStatus, ID_FILEINFO, chStatus);
+	Matepath_ApplyShellDarkMode(hwnd);
+}
+
+bool Matepath_IsDarkTheme() noexcept {
+	WCHAR notepadIni[MAX_PATH];
+	lstrcpy(notepadIni, szIniFile);
+	LPWSTR pszFile = PathFindFileName(notepadIni);
+	if (pszFile == notepadIni) {
+		return false;
+	}
+	lstrcpy(pszFile, L"Notepad.ini");
+	return GetPrivateProfileIntW(L"Styles", L"StyleTheme", 0, notepadIni) == 1;
+}
+
+void Matepath_ApplyShellDarkMode(HWND hwnd) noexcept {
+	if (hwnd == nullptr) {
+		return;
+	}
+	const bool dark = Matepath_IsDarkTheme();
+	DarkMode_LogApply(hwnd, dark, L"Matepath_ApplyShellDarkMode");
+	const bool apply = DarkMode_ShouldApply(dark);
+	DarkMode_ApplyToWindow(hwnd, apply);
+	DarkMode_SetWindowDark(hwnd, apply);
+	DarkMode_ApplyToCommCtrlBars(hwndReBar, hwndToolbar, hwndStatus, dark);
+	if (hwndDirList != nullptr) {
+		if (apply && bFullRowSelect) {
+			SetExplorerTheme(hwndDirList);
+		} else if (apply) {
+			SetListViewTheme(hwndDirList);
+		}
+		ListView_SetBkColor(hwndDirList, DarkMode_GetShellBackgroundColor(apply));
+		if (HasFilter()) {
+			ListView_SetTextColor(hwndDirList, bDefColorFilter ? DarkMode_GetShellTextColor(apply) : colorFilter);
+		} else {
+			ListView_SetTextColor(hwndDirList, bDefColorNoFilter ? DarkMode_GetShellTextColor(apply) : colorNoFilter);
+		}
+		ListView_RedrawItems(hwndDirList, 0, ListView_GetItemCount(hwndDirList) - 1);
+	}
 }
 
 //=============================================================================
@@ -2972,9 +3044,9 @@ void FindIniFile() noexcept {
 		// C:\Users\<username>\AppData\Local
 		// C:\Documents and Settings\<username>\Local Settings\Application Data
 		if (S_OK == SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &pszPath)) {
-			// always use %LOCALAPPDATA%\Notepad4 for non-portable installation
+			// always use %LOCALAPPDATA%\Notepad for non-portable installation
 			portable = false;
-			PathCombine(appData, pszPath, WC_NOTEPAD4);
+			PathCombine(appData, pszPath, WC_NOTEPAD);
 			lstrcpy(lpszIniFile, appData);
 			PathAppend(lpszIniFile, L"matepath.ini");
 			CoTaskMemFree(pszPath);
@@ -3379,9 +3451,9 @@ void LoadLaunchSetings() noexcept {
 	} else if (iUseTargetApplication != UseTargetApplication_None && StrIsEmpty(szTargetApplication)) {
 		iUseTargetApplication = UseTargetApplication_Use;
 		iTargetApplicationMode = TargetApplicationMode_SendMsg;
-		lstrcpy(szTargetApplication, L"Notepad4.exe");
+		lstrcpy(szTargetApplication, L"Notepad.exe");
 		StrCpyEx(szTargetApplicationParams, L"");
-		lstrcpy(szTargetApplicationWndClass, WC_NOTEPAD4);
+		lstrcpy(szTargetApplicationWndClass, WC_NOTEPAD);
 		StrCpyEx(szDDEMsg, L"");
 		StrCpyEx(szDDEApp, L"");
 		StrCpyEx(szDDETopic, L"");

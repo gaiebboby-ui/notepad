@@ -5,13 +5,13 @@ NAME = $(BINFOLDER)/$(PROJ).exe
 OBJDIR = $(BINFOLDER)/obj/$(PROJ)
 SRCDIR = ../../$(PROJ)/src
 # for Win32 XP build
-LDLIBS += -lpsapi
+LDLIBS += -lpsapi -ldwmapi
 
 # c_src = $(wildcard $(SRCDIR)/*.c)
 # c_obj = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.obj,$(c_src))
 
 cpp_src = $(wildcard $(SRCDIR)/*.cpp)
-cpp_obj = $(patsubst $(SRCDIR)/%.cpp,$(OBJDIR)/%.obj,$(cpp_src))
+cpp_obj = $(patsubst $(SRCDIR)/%.cpp,$(OBJDIR)/%.obj,$(cpp_src)) $(OBJDIR)/DarkMode.obj
 
 rc_src = $(wildcard $(SRCDIR)/*.rc)
 rc_obj = $(patsubst $(SRCDIR)/%.rc,$(OBJDIR)/%.res,$(rc_src))
@@ -25,7 +25,10 @@ $(NAME): $(cpp_obj) $(rc_obj)
 # 	$(CC) -c $(CPPFLAGS) $(CFLAGS) $< -o $(OBJDIR)/$*.obj
 
 $(cpp_obj): $(OBJDIR)/%.obj: $(SRCDIR)/%.cpp
-	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) $< -o $(OBJDIR)/$*.obj
+	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) -I"../../src" $< -o $(OBJDIR)/$*.obj
+
+$(OBJDIR)/DarkMode.obj: ../../src/DarkMode.cpp
+	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) -I"../../src" $< -o $@
 
 $(rc_obj): $(OBJDIR)/%.res: $(SRCDIR)/%.rc
 	$(RC) -c 65001 $(CPPFLAGS) $(RCFLAGS) $< $(OBJDIR)/$*.res

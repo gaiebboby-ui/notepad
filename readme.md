@@ -1,6 +1,10 @@
-# Notepad4 and matepath
+# Notepad and matepath
 
-Notepad4 (Notepad2⨯2, Notepad2++) is a light-weight Scintilla based text editor for Windows with syntax highlighting, code folding, auto-completion and API list for many programming languages and documents, it's based on (rewritten in modern C++) Florian's [Notepad2](https://www.flos-freeware.ch/notepad2.html) and XhmikosR's [Notepad2-mod](https://xhmikosr.github.io/notepad2-mod/). matepath is a file browser plugin and based on (rewritten in modern C++) Florian's [metapath](https://www.flos-freeware.ch/archive.html).
+> **Fork note:** This build uses the product name **Notepad** (executable `Notepad.exe`, settings `Notepad.ini`) instead of upstream **Notepad4**. The project is still based on [zufuliu/notepad4](https://github.com/zufuliu/notepad4); internal source file names (`Notepad4.cpp`, etc.) are unchanged.
+>
+> **Fork documentation:** [Preview Mode](doc/Preview-Mode.md) · [All fork changes](doc/FORK-CHANGES.md) · [Build](doc/wiki/Build-Notepad.md) · [CI/CD](doc/wiki/CI-CD.md)
+
+Notepad (Notepad2⨯2, Notepad2++) is a light-weight Scintilla based text editor for Windows with syntax highlighting, code folding, auto-completion and API list for many programming languages and documents, it's based on (rewritten in modern C++) Florian's [Notepad2](https://www.flos-freeware.ch/notepad2.html) and XhmikosR's [Notepad2-mod](https://xhmikosr.github.io/notepad2-mod/). matepath is a file browser plugin and based on (rewritten in modern C++) Florian's [metapath](https://www.flos-freeware.ch/archive.html).
 
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](License.txt) [![Latest release](https://img.shields.io/github/release/zufuliu/notepad4.svg)](https://github.com/zufuliu/notepad4/releases) [![Downloads](https://img.shields.io/github/downloads/zufuliu/notepad4/total.svg)](https://github.com/zufuliu/notepad4/releases)
 
@@ -13,6 +17,13 @@ Latest development builds (artifacts in Release configuration for each compiler 
 
 ## [Screenshots](https://github.com/zufuliu/notepad4/wiki/Screenshots)
 ![v24.07 HD](https://raw.githubusercontent.com/wiki/zufuliu/notepad4/screenshots/v24.07HD.png)
+
+## Fork highlights (this repository)
+
+* **[Preview Mode](doc/Preview-Mode.md)** — split view with live preview for Markdown (GFM / md4c), HTML, XML, and CSV; Ctrl+wheel zoom; dark-theme preview chrome
+* **Dark theme** — `Notepad DarkTheme.ini` and shell dark mode (`DarkMode` module)
+* **Toolbar** — larger default buttons (+20% scale); Preview Mode button with dedicated icon (before Close)
+* **Build / CI** — documented in [doc/wiki/](doc/wiki/); release zips named `Notepad_*.zip`
 
 ## Changes compared to [Notepad2](https://www.flos-freeware.ch/notepad2.html) or [Notepad2-mod](https://xhmikosr.github.io/notepad2-mod/):
 
@@ -180,6 +191,7 @@ Latest development builds (artifacts in Release configuration for each compiler 
 * Support text transliteration
 * Support URL highlighting
 * Support drag and drop file from Visual Studio, Android Studio, IntelliJ IDEA, etc.
+* **[Preview Mode](doc/Preview-Mode.md)** for Markdown, HTML, XML, and CSV (this fork)
 * Other various major or minor changes and tweaks
 
 ## Supported Operating Systems:
@@ -202,7 +214,8 @@ Latest development builds (artifacts in Release configuration for each compiler 
 * [Florian's Notepad2 website](https://www.flos-freeware.ch/notepad2.html)
 * [XhmikosR's Notepad2-mod website](https://xhmikosr.github.io/notepad2-mod/)
 * [Scintilla's website](https://www.scintilla.org/)
-* [Build Notepad4 and matepath](https://github.com/zufuliu/notepad4/wiki/Build-Notepad4)
+* [Build Notepad (this fork)](doc/wiki/Build-Notepad.md) · [upstream Build wiki](https://github.com/zufuliu/notepad4/wiki/Build-Notepad4)
+* [CI/CD (this fork)](doc/wiki/CI-CD.md)
 * [Localization](https://github.com/zufuliu/notepad4/wiki/Localization)
 	* [Deutsch](https://github.com/zufuliu/notepad4/tree/main/locale/de) by [@xelsios](https://github.com/xelsios)
 	* [French](https://github.com/zufuliu/notepad4/tree/main/locale/fr) by [@VoilierBleu](https://github.com/VoilierBleu)
@@ -213,5 +226,5 @@ Latest development builds (artifacts in Release configuration for each compiler 
 	* [中文 (繁體)](https://github.com/zufuliu/notepad4/tree/main/locale/zh-Hant)
 	* [中文 (简体)](https://github.com/zufuliu/notepad4/tree/main/locale/zh-Hans)
 	* [한국어](https://github.com/zufuliu/notepad4/tree/main/locale/ko) by [@VenusGirl](https://github.com/VenusGirl)
-	* [한국어](https://teus.me/Notepad4) by [@bluenlive](https://github.com/bluenlive)
-* [Notepad4 Wiki](https://github.com/zufuliu/notepad4/wiki)
+	* [한국어](https://teus.me/Notepad) by [@bluenlive](https://github.com/bluenlive)
+* [Notepad Wiki](https://github.com/zufuliu/notepad4/wiki)
