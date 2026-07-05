@@ -6,11 +6,11 @@
 .DESCRIPTION
   For the current user (HKCU, no admin required):
     - ProgId Notepad.document with open command and icon
-    - Default handler for text-like extensions Notepad supports
-    - Context menu "Открыть в Notepad" on those extensions (SystemFileAssociations)
+    - Default handler for safe text types; context menu for scripts and HTML (edit in Notepad)
+  - No default association: executables, auto-run scripts (.bat, .ps1, .ahk, …), HTML (.html, .htm, …)
+  - No context menu: binaries only (.exe, .dll, .lnk, …)
 
   Mirrors the in-app System Integration logic (see src/Dialogs.cpp, src/config.h).
-
 .PARAMETER ExePath
   Full path to Notepad.exe
 
@@ -54,9 +54,69 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $Script:CoreExtensions = @(
-	'txt', 'log', 'ini', 'inf', 'md', 'json', 'xml', 'bat', 'cmd', 'reg', 'csv',
-	'yaml', 'yml', 'cfg', 'conf', 'js', 'ts', 'css', 'html', 'htm'
+	'txt', 'log', 'ini', 'md', 'json', 'xml', 'csv',
+	'yaml', 'yml', 'cfg', 'conf', 'ts', 'css'
 )
+
+# Context menu only (no double-click default) — still opened via "Open in Notepad".
+$Script:ContextMenuOnlyExtensions = @(
+	'html', 'htm', 'shtml', 'xhtml', 'mht', 'mhtml',
+	'asp', 'aspx', 'jsp', 'vue', 'hbs', 'svelte', 'cfm', 'tpl', 'jd', 'htc'
+)
+
+# No default handler (scripts / side-effect types) — context menu remains.
+$Script:NoDefaultExtensions = [System.Collections.Generic.HashSet[string]]::new(
+	[StringComparer]::OrdinalIgnoreCase
+)
+@(
+	$Script:ContextMenuOnlyExtensions
+	# CMD & batch
+	'bat', 'cmd',
+	# Windows Script Host
+	'vbs', 'vbe', 'vb', 'js', 'jse', 'ws', 'wsc', 'wsf', 'wsh', 'msc', 'hta', 'sct', 'shb', 'shs', 'scf',
+	# PowerShell
+	'ps1', 'psm1', 'psc1', 'psd1', 'ps1xml', 'cdxml', 'ps2', 'ps2xml', 'workflow',
+	'msh', 'msh1', 'msh2', 'mshxml', 'msh1xml', 'msh2xml',
+	# AutoHotkey / AutoIt
+	'ahk', 'ia', 'au3',
+	# Python / Ruby / Perl
+	'py', 'pyw', 'pyc', 'pyo', 'pyz', 'pyzw', 'rb', 'rbw', 'pl', 'plx', 'pm',
+	# Shell / Node
+	'sh', 'bash', 'zsh', 'fish', 'ksh', 'csh', 'mjs', 'cjs',
+	# Registry / driver setup
+	'reg', 'inf',
+	# PHP
+	'php', 'phps', 'phtml', 'phpt'
+) | ForEach-Object { [void]$Script:NoDefaultExtensions.Add($_) }
+
+# No association at all (no default, no context menu).
+$Script:NoMenuExtensions = [System.Collections.Generic.HashSet[string]]::new(
+	[StringComparer]::OrdinalIgnoreCase
+)
+@(
+	'exe', 'com', 'scr', 'pif', 'msi', 'msp', 'msu', 'dll', 'ocx', 'sys', 'drv', 'cpl',
+	'application', 'gadget', 'diagcab', 'diagpkg', 'appx', 'msix', 'appxbundle', 'msixbundle', 'appref-ms',
+	'lnk', 'url', 'website', 'webloc',
+	'jar', 'class', 'jnlp', 'war', 'ear',
+	'app', 'action', 'command', 'osx', 'ipa', 'apk',
+	'deb', 'rpm', 'appimage',
+	'bin', 'elf', 'o', 'obj', 'lib', 'so', 'dylib', 'wasm',
+	'ade', 'adp', 'asa', 'asax', 'ashx', 'asm', 'asmx', 'bas', 'cer', 'chm',
+	'crt', 'der', 'fxp', 'grp', 'hlp', 'hvx', 'its', 'mdb', 'mde', 'mmc',
+	'mof', 'ops', 'osd', 'pcd', 'plg', 'prc', 'prg', 'printerexport', 'pst', 'vbp',
+	'vhd', 'vhdx', 'vsmacros', 'vsw', 'xll', 'xnk'
+) | ForEach-Object { [void]$Script:NoMenuExtensions.Add($_) }
+
+function Test-SkipDefaultAssociation {
+	param([string]$Extension)
+	$ext = $Extension.TrimStart('.')
+	return $Script:NoDefaultExtensions.Contains($ext) -or $Script:NoMenuExtensions.Contains($ext)
+}
+
+function Test-SkipContextMenu {
+	param([string]$Extension)
+	return $Script:NoMenuExtensions.Contains($Extension.TrimStart('.'))
+}
 
 function Resolve-NotepadExe {
 	param([string]$Path)
@@ -66,22 +126,17 @@ function Resolve-NotepadExe {
 		}
 		return (Resolve-Path -LiteralPath $Path).Path
 	}
+	$sameDir = Join-Path $PSScriptRoot 'Notepad.exe'
+	if (Test-Path -LiteralPath $sameDir) {
+		return (Resolve-Path -LiteralPath $sameDir).Path
+	}
 	if ($env:NOTEPAD_EXE -and (Test-Path -LiteralPath $env:NOTEPAD_EXE)) {
 		return (Resolve-Path -LiteralPath $env:NOTEPAD_EXE).Path
 	}
-	$candidates = @(
-		(Join-Path $PSScriptRoot '..\build\bin\Release\x64\Notepad.exe')
-		(Join-Path $PSScriptRoot '..\Notepad.exe')
-	)
-	foreach ($candidate in $candidates) {
-		$resolved = [System.IO.Path]::GetFullPath($candidate)
-		if (Test-Path -LiteralPath $resolved) {
-			return $resolved
-		}
-	}
-	throw 'Notepad.exe not found. Pass -ExePath "C:\path\to\Notepad.exe" or set NOTEPAD_EXE.'
+	throw "Notepad.exe not found next to this script. Expected: $sameDir"
 }
 
+function Test-Administrator {
 	$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 	$principal = [Security.Principal.WindowsPrincipal]$identity
 	return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -107,16 +162,56 @@ function Get-ExtensionsFromFileExtTxt {
 	return @($set) | Sort-Object
 }
 
-function Get-TargetExtensions {
+function Get-AllCandidateExtensions {
 	$list = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 	foreach ($ext in $Script:CoreExtensions) { [void]$list.Add($ext) }
-	if ($Extended) {
+	foreach ($ext in $Script:ContextMenuOnlyExtensions) { [void]$list.Add($ext) }
+	$fileExt = Join-Path $PSScriptRoot 'FileExt.txt'
+	if (-not (Test-Path -LiteralPath $fileExt)) {
 		$fileExt = Join-Path $PSScriptRoot '..\doc\FileExt.txt'
+	}
+	if ($Extended -and (Test-Path -LiteralPath $fileExt)) {
 		foreach ($ext in (Get-ExtensionsFromFileExtTxt -FilePath $fileExt)) {
 			[void]$list.Add($ext)
 		}
 	}
 	return @($list) | Sort-Object
+}
+
+function Get-CleanupExtensions {
+	$list = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+	foreach ($ext in (Get-AllCandidateExtensions)) { [void]$list.Add($ext) }
+	foreach ($ext in $Script:NoDefaultExtensions) { [void]$list.Add($ext) }
+	foreach ($ext in $Script:NoMenuExtensions) { [void]$list.Add($ext) }
+	$fileExt = Join-Path $PSScriptRoot 'FileExt.txt'
+	if (-not (Test-Path -LiteralPath $fileExt)) {
+		$fileExt = Join-Path $PSScriptRoot '..\doc\FileExt.txt'
+	}
+	if (Test-Path -LiteralPath $fileExt) {
+		foreach ($ext in (Get-ExtensionsFromFileExtTxt -FilePath $fileExt)) {
+			[void]$list.Add($ext)
+		}
+	}
+	return @($list) | Sort-Object
+}
+
+function Get-TargetExtensions {
+	$skippedMenu = [System.Collections.Generic.List[string]]::new()
+	$defaultOnly = [System.Collections.Generic.List[string]]::new()
+	$withMenu = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+	foreach ($ext in (Get-AllCandidateExtensions)) {
+		if (Test-SkipContextMenu -Extension $ext) {
+			$skippedMenu.Add($ext) | Out-Null
+			continue
+		}
+		[void]$withMenu.Add($ext)
+		if (Test-SkipDefaultAssociation -Extension $ext) {
+			$defaultOnly.Add($ext) | Out-Null
+		}
+	}
+	$script:LastSkippedMenuExtensions = $skippedMenu
+	$script:LastMenuOnlyExtensions = $defaultOnly
+	return @($withMenu) | Sort-Object
 }
 
 function Get-OpenCommand {
@@ -242,6 +337,32 @@ function Register-DefaultPrograms {
 	$cmdk.Close()
 }
 
+function Remove-StaleDefaultAssociation {
+	param([string]$Extension)
+	$extKey = "Software\Classes\.$Extension"
+	try {
+		$k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($extKey, $true)
+		if ($null -ne $k) {
+			$current = $k.GetValue('')
+			if ($current -eq $ProgId) {
+				$k.DeleteValue('')
+			}
+			$k.Close()
+		}
+	} catch { }
+}
+
+function Remove-StaleContextMenu {
+	param([string]$Extension)
+	Remove-RegistryTree -Hive 'CurrentUser' -SubKey "Software\Classes\SystemFileAssociations\.$Extension\shell\OpenInNotepad"
+}
+
+function Remove-StaleExtensionRegistration {
+	param([string]$Extension)
+	Remove-StaleDefaultAssociation -Extension $Extension
+	Remove-StaleContextMenu -Extension $Extension
+}
+
 function Unregister-Associations {
 	param([string[]]$Extensions)
 
@@ -290,21 +411,43 @@ $openCommand = Get-OpenCommand -Path $exe
 $extensions = Get-TargetExtensions
 
 if ($Unregister) {
-	Unregister-Associations -Extensions $extensions
+	Unregister-Associations -Extensions (Get-CleanupExtensions)
 	return
 }
 
+$skippedCount = 0
+$menuOnlyCount = 0
+if ($null -ne $script:LastSkippedMenuExtensions) {
+	$skippedCount = $script:LastSkippedMenuExtensions.Count
+}
+if ($null -ne $script:LastMenuOnlyExtensions) {
+	$menuOnlyCount = $script:LastMenuOnlyExtensions.Count
+}
+
 Write-Host "Notepad: $exe"
-Write-Host "Extensions: $($extensions.Count) ($(if ($Extended) { 'extended' } else { 'core' }))"
+Write-Host "Extensions: $($extensions.Count) ($(if ($Extended) { 'extended' } else { 'core' })), menu-only $menuOnlyCount, skipped $skippedCount binary"
 Write-Host "ProgId: $ProgId"
 Write-Host ''
+
+foreach ($ext in $Script:NoMenuExtensions) {
+	Remove-StaleExtensionRegistration -Extension $ext
+}
+foreach ($ext in $Script:NoDefaultExtensions) {
+	Remove-StaleDefaultAssociation -Extension $ext
+}
 
 Register-ProgId -Path $exe -IconPath $icon -OpenCommand $openCommand
 
 $i = 0
+$defaultCount = 0
 foreach ($ext in $extensions) {
-	Set-ExtensionDefault -Extension $ext
 	Add-ExtensionContextMenu -Extension $ext -Label $ContextMenuLabel -IconPath $icon -OpenCommand $openCommand
+	if (-not (Test-SkipDefaultAssociation -Extension $ext)) {
+		Set-ExtensionDefault -Extension $ext
+		$defaultCount++
+	} else {
+		Remove-StaleDefaultAssociation -Extension $ext
+	}
 	$i++
 	if ($i % 50 -eq 0) {
 		Write-Host "  ... $i / $($extensions.Count)"
@@ -312,16 +455,15 @@ foreach ($ext in $extensions) {
 }
 
 if ($RegisterDefaultApps) {
-	$assoc = ($extensions | ForEach-Object { ".$_" }) -join ';'
+	$assoc = ($extensions | Where-Object { -not (Test-SkipDefaultAssociation -Extension $_) } | ForEach-Object { ".$_" }) -join ';'
 	Register-DefaultPrograms -Path $exe -Associations $assoc
 }
 
 Invoke-AssociationRefresh
 
 Write-Host ''
-Write-Host "Done. Registered $i extensions for current user." -ForegroundColor Green
-Write-Host "Default app: double-click opens in Notepad (per-user HKCU)."
-Write-Host "Context menu: ""$ContextMenuLabel"" on listed extensions."
+Write-Host "Done. Context menu: $i extensions; default handler: $defaultCount." -ForegroundColor Green
+Write-Host "Scripts/HTML: context menu only (no double-click default)."
 Write-Host ''
-Write-Host 'Tip: run with -Extended to add every extension from doc/FileExt.txt.'
+Write-Host 'Tip: run with -Extended to use FileExt.txt in this folder.'
 Write-Host 'Tip: Settings -> Apps -> Default apps -> Choose defaults by file type, if Windows still uses another app.'

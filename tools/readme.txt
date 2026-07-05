@@ -25,6 +25,14 @@ images:
 		Regenerate res/Toolbar*.bmp after changing icons (needs cairosvg, Pillow).
 		make_notepad4_toolbar_bitmap() in ImageTool.py lists all toolbar PNGs.
 
+Portable install scripts (copied next to Notepad.exe; run directly — .bat / .ps1, not embedded):
+	register-associations.bat / .ps1 — file associations and context menu (same folder as Notepad.exe)
+		Skips default handler for auto-run scripts and HTML; context menu remains for scripts/HTML.
+		Skips binaries (.exe, .dll, …) entirely.
+	unregister-associations.bat — remove associations
+	deploy-portable.ps1 — full or -ScriptsOnly deploy to a target directory
+	sync-portable-scripts.bat — copy scripts only: sync-portable-scripts.bat "target dir"
+
 	16 color bitmap:
 		res/Prev.bmp		Prev.svg
 		res/Next.bmp		Next.svg
