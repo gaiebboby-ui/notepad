@@ -14,8 +14,9 @@ Latest **x64** builds for Windows 10/11 (MSVC Release, all locales) are publishe
 
 [![CI](https://github.com/gaiebboby-ui/notepad/actions/workflows/main.yml/badge.svg)](https://github.com/gaiebboby-ui/notepad/actions/workflows/main.yml)
 
-## [Screenshots](https://github.com/zufuliu/notepad4/wiki/Screenshots)
-![v24.07 HD](https://raw.githubusercontent.com/wiki/zufuliu/notepad4/screenshots/v24.07HD.png)
+## Screenshots
+
+![Notepad with Preview Mode](doc/Screenshots.png)
 
 ## Fork highlights (this repository)
 
