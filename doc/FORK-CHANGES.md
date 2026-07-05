@@ -72,8 +72,8 @@ To reset toolbar layout after an upgrade, remove `ToolbarButtons` from `Notepad.
 - MinGW: `src/md4c/*.c` linked from `build/mingw/notepad4.mk`
 - Toolbar bitmaps: `python tools/build_toolbar.py` (requires `cairosvg`, `Pillow`; see `tools/ImageTool.py`)
 
-GitHub Actions: `.github/workflows/main.yml` — artifacts named `Notepad_*`.  
-AppVeyor: `appveyor.yml` — same zip naming.
+GitHub Actions: `.github/workflows/main.yml` — single job **MSVC x64** on `windows-2022`, artifact **`Notepad_x64`** (`Notepad_i18n_x64_*.zip`).  
+AppVeyor: `appveyor.yml` — same x64 build (optional mirror).
 
 **CI must include** (commit before push): `PreviewMode.*`, `DarkMode.*`, `src/md4c/`, `doc/Notepad DarkTheme.ini`, updated `res/Toolbar*.bmp`, `tools/images/Preview.svg`.
 

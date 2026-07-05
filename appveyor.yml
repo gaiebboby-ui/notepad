@@ -6,7 +6,6 @@ image:
 environment:
   matrix:
     - compiler: MSVC
-    - compiler: Clang
 
 shallow_clone: true
 
@@ -23,61 +22,12 @@ before_build:
       ECHO Update Version Hash
       "c:/Program Files/Git/usr/bin/sed" -i "s/\(.\+\)[0-9a-f]\{8\}\(.\+\)/\1%APPVEYOR_REPO_COMMIT:~0,8%\2/gm" ./src/VersionRev.h ./matepath/src/VersionRev.h
 
-for:
-  - # MSVC Release
-    matrix:
-      only:
-        - compiler: MSVC
+build_script:
+  - cmd: |
+      CALL "build\VisualStudio\build.bat" Build x64 Release 1
+      CALL "locale\build.bat" Build x64 Release 1
+      CALL "build\make_zip.bat" MSVC x64 Release Locale 1
 
-    build_script:
-      - cmd: |
-          CALL "build\VisualStudio\build.bat" Build x64 Release 1
-          CALL "locale\build.bat" Build x64 Release 1
-          CALL "build\make_zip.bat" MSVC x64 Release Locale 1
-
-          CALL "build\VisualStudio\build.bat" Build Win32 Release 1
-          CALL "locale\build.bat" Build Win32 Release 1
-          CALL "build\make_zip.bat" MSVC Win32 Release Locale 1
-
-          CALL "build\VisualStudio\build.bat" Build AVX2 Release 1
-          CALL "locale\build.bat" Build AVX2 Release 1
-          CALL "build\make_zip.bat" MSVC AVX2 Release Locale 1
-
-          CALL "build\VisualStudio\build.bat" Build AVX512 Release 1
-          CALL "locale\build.bat" Build AVX512 Release 1
-          CALL "build\make_zip.bat" MSVC AVX512 Release Locale 1
-
-          CALL "build\VisualStudio\build.bat" Build ARM64 Release 1
-          CALL "locale\build.bat" Build ARM64 Release 1
-          CALL "build\make_zip.bat" MSVC ARM64 Release Locale 1
-
-    artifacts:
-      - path: 'build\Notepad*.zip'
-        name: Notepad_MSVC
-
-  - # Clang Release
-    matrix:
-      only:
-        - compiler: Clang
-
-    build_script:
-      - cmd: |
-          CALL "build\install_llvm.bat" latest 1
-          CALL "build\VisualStudio\build.bat" Build x64 LLVMRelease 1
-          CALL "build\make_zip.bat" LLVM x64 Release 1
-
-          CALL "build\VisualStudio\build.bat" Build Win32 LLVMRelease 1
-          CALL "build\make_zip.bat" LLVM Win32 Release 1
-
-          CALL "build\VisualStudio\build.bat" Build AVX2 LLVMRelease 1
-          CALL "build\make_zip.bat" LLVM AVX2 Release 1
-
-          CALL "build\VisualStudio\build.bat" Build AVX512 LLVMRelease 1
-          CALL "build\make_zip.bat" LLVM AVX512 Release 1
-
-          CALL "build\VisualStudio\build.bat" Build ARM64 LLVMRelease 1
-          CALL "build\make_zip.bat" LLVM ARM64 Release 1
-
-    artifacts:
-      - path: 'build\Notepad*.zip'
-        name: Notepad_Clang_MSVC
+artifacts:
+  - path: 'build\Notepad_i18n_x64_*.zip'
+    name: Notepad_x64

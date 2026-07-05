@@ -9,11 +9,10 @@ Syntax highlighting, code folding, auto-completion, and API lists cover many pro
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](License.txt) [![Latest release](https://img.shields.io/github/release/zufuliu/notepad4.svg)](https://github.com/zufuliu/notepad4/releases) [![Downloads](https://img.shields.io/github/downloads/zufuliu/notepad4/total.svg)](https://github.com/zufuliu/notepad4/releases)
 
 ## Binaries
-Latest development builds (artifacts in Release configuration for each compiler and platform) are available on [GitHub Actions](https://github.com/zufuliu/notepad4/actions) and [AppVeyor](https://ci.appveyor.com/project/zufuliu/notepad4). Or you can build from source, see [Wiki](https://github.com/zufuliu/notepad4/wiki/Build-Notepad4).
 
-| GitHub Actions (MSVC, Clang, GCC) | AppVeyor (MSVC, Clang) |
-| --------------- | -------- |
-| [![Build status](https://github.com/zufuliu/notepad4/workflows/CI/badge.svg)](https://github.com/zufuliu/notepad4/actions) | [![Build status](https://ci.appveyor.com/api/projects/status/github/zufuliu/notepad4?branch=main&svg=true)](https://ci.appveyor.com/project/zufuliu/notepad4) |
+Latest **x64** builds for Windows 10/11 (MSVC Release, all locales) are published as the **`Notepad_x64`** artifact on [GitHub Actions](https://github.com/gaiebboby-ui/notepad/actions). Or build from source: [Build guide](doc/wiki/Build-Notepad.md).
+
+[![CI](https://github.com/gaiebboby-ui/notepad/actions/workflows/main.yml/badge.svg)](https://github.com/gaiebboby-ui/notepad/actions/workflows/main.yml)
 
 ## [Screenshots](https://github.com/zufuliu/notepad4/wiki/Screenshots)
 ![v24.07 HD](https://raw.githubusercontent.com/wiki/zufuliu/notepad4/screenshots/v24.07HD.png)
