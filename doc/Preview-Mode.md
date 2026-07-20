@@ -15,7 +15,7 @@ Live preview for Markdown, HTML, XML, and CSV in a split view inside Notepad.
 
 | Scheme | Preview behavior |
 |--------|------------------|
-| **Markdown** | GFM via md4c: tables, task lists, strikethrough, fenced code, links, images |
+| **Markdown** | GFM via md4c: tables, task lists, strikethrough, fenced code, links, images; fenced ` ```mermaid ` blocks render as diagrams (Mermaid.js) |
 | **HTML** | Escaped source in a readable HTML wrapper |
 | **XML** | Same as HTML |
 | **CSV** | RFC-style table (comma-separated rows) |
@@ -28,13 +28,26 @@ Other schemes do not offer preview; toggling preview on them has no effect.
 ┌─────────────────────────────┐
 │  Editor (Scintilla)         │
 ├─────────────────────────────┤  ← splitter (drag to resize)
-│  Preview (MSHTML)           │
+│  Preview (WebView2)         │
 └─────────────────────────────┘
 ```
 
 - **Drag** the splitter to change pane heights (saved as `PreviewHeightPercent`).
 - **Double-click** the splitter or use **View → Maximize Preview** to toggle full preview height.
 - **View → Auto Enable Preview Mode** — turn preview on automatically when opening supported files.
+
+## Links
+
+- Clicking an `http://` or `https://` link opens it in the **system default browser**.
+- The preview pane does **not** navigate to external sites.
+- In-document anchors (`#section`) still scroll inside the preview.
+- Context menu: **Open Link** (browser) and **Copy Link**.
+
+## Clipboard (Ctrl+C)
+
+- Select text in the preview, then **Ctrl+C** copies that selection (not the editor buffer).
+- **Ctrl+A** selects all preview content.
+- Context menu **Copy** / **Select All** also work.
 
 ## Zoom
 
@@ -50,13 +63,11 @@ Right-click in the preview:
 
 - **Copy** / **Select All**
 - **Open Link** / **Copy Link** (when over a hyperlink)
-- **Copy Image** or **Copy Image URL** (when over an image)
 
 ## Theme
 
 - **Light:** GitHub-like styling (similar to github.com markdown body).
 - **Dark:** Used when Notepad dark shell theme is active (`Notepad DarkTheme.ini` / dark style theme).
-- Native scrollbars in the preview follow dark chrome when applicable.
 
 ## Settings (`Notepad.ini`)
 
@@ -76,7 +87,28 @@ PreviewZoomPercent=100
 | `PreviewMaximized` | `1` = preview uses entire client height |
 | `PreviewZoomPercent` | Zoom level for preview content |
 
+## Saving Markdown (raw text)
+
+Preview is read-only and never rewrites the file. `EditSaveFile` writes the Scintilla buffer as-is; there is **no** Markdown auto-formatter.
+
+Optional global save options (Settings) can still change bytes on disk:
+
+- **Fix line endings** (`FixLineEndings`)
+- **Strip trailing blanks** (`FixTrailingBlanks` / `bAutoStripBlanks`)
+
+For ASCII art or Mermaid source that relies on trailing spaces, keep strip trailing blanks **off**.
+
 ## Troubleshooting
+
+### Preview shows “Preview unavailable”
+
+- Install the Evergreen [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) and restart.
+- Check `NotepadPreview.log` beside `Notepad.exe`.
+
+### Mermaid diagrams missing
+
+- Ensure `preview/mermaid.min.js` sits next to `Notepad.exe` (copied on MSVC build).
+- Use a fenced block: ` ```mermaid ` … ` ``` `.
 
 ### Preview is empty or stale
 
@@ -104,5 +136,7 @@ Or use **View → Customize Toolbar** to restore defaults.
 
 - Module: `src/PreviewMode.cpp`, `src/PreviewMode.h`
 - Markdown: `src/md4c/` (compiled as C, `__cdecl` `md_html`)
-- Browser: `IWebBrowser2` / Trident embedded in the main window
+- Browser: **WebView2** (Edge Chromium); SDK under `third_party/webview2/`
+- Assets: `preview/mermaid.min.js` mapped as virtual host `np2.preview`
 - Updates: timer + posted `APPM_PREVIEW_UPDATE` to avoid re-entrancy hangs
+- Editor monospace for Markdown code/tables: `font:$(Code)` in `src/EditLexers/stlMarkdown.cpp`

@@ -101,11 +101,15 @@ See `tools\ImageTool.py` for the full icon list.
 
 | Path | Role |
 |------|------|
-| `src/PreviewMode.cpp`, `.h` | Preview split view |
+| `src/PreviewMode.cpp`, `.h` | Preview split view (WebView2) |
 | `src/DarkMode.cpp`, `.h` | Dark shell theme |
 | `src/md4c/` | Markdown HTML renderer |
+| `third_party/webview2/` | WebView2 SDK headers + loader libs |
+| `preview/mermaid.min.js` | Offline Mermaid for diagram preview |
 | `res/Toolbar*.bmp` | Toolbar images |
 | `doc/Notepad DarkTheme.ini` | Bundled dark scheme |
+
+**Runtime:** Evergreen WebView2 Runtime (usually preinstalled on Windows 10/11).
 
 ## CodeLite / other
 

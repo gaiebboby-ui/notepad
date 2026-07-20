@@ -451,6 +451,12 @@ static void DispatchMessageMain(MSG *msg) noexcept {
 		}
 	}
 
+	if (PreviewMode_ShouldSkipMainAccelerator(msg)) {
+		TranslateMessage(msg);
+		DispatchMessage(msg);
+		return;
+	}
+
 	if (!TranslateAccelerator(hwndMain, hAccMain, msg)) {
 		TranslateMessage(msg);
 		DispatchMessage(msg);
@@ -1589,9 +1595,9 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT umsg, WPARAM wParam, LPARAM lParam)
 		break;
 
 	case APPM_PREVIEW_RELAYOUT: {
-		const int cx = LOWORD(lParam);
-		const int cy = HIWORD(lParam);
-		MsgSize(hwnd, SIZE_RESTORED, MAKELPARAM(cx, cy));
+		RECT rc;
+		GetClientRect(hwnd, &rc);
+		MsgSize(hwnd, SIZE_RESTORED, MAKELPARAM(rc.right, rc.bottom));
 		DrawMenuBar(hwnd);
 	} break;
 

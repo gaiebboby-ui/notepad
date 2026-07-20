@@ -42,9 +42,11 @@ Commit these fork files (not optional for CI):
 - `src/PreviewMode.cpp`, `src/PreviewMode.h`
 - `src/DarkMode.cpp`, `src/DarkMode.h`
 - `src/md4c/*`
+- `third_party/webview2/*` (SDK headers + `WebView2LoaderStatic.lib`)
+- `preview/mermaid.min.js`
 - `doc/Notepad.ini`, `doc/Notepad DarkTheme.ini` (used by build scripts and `make_zip.bat`)
 - Updated `res/Toolbar*.bmp` (if toolbar changed)
-- `build/VisualStudio/Notepad4.vcxproj` (lists new sources)
+- `build/VisualStudio/Notepad4.vcxproj` (lists new sources / WebView2 link paths)
 
 ## Common failures
 

@@ -33,3 +33,4 @@ void PreviewMode_RequestUpdate() noexcept;
 void PreviewMode_OnTimer() noexcept;
 void PreviewMode_OnPostedUpdate() noexcept;
 void PreviewMode_OnThemeChanged() noexcept;
+bool PreviewMode_ShouldSkipMainAccelerator(const MSG *msg) noexcept;

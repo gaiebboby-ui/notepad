@@ -1,4 +1,5 @@
 // This file is part of Notepad.
+// Preview Mode: WebView2 host with Markdown/HTML/XML/CSV preview and Mermaid diagrams.
 
 #include <windows.h>
 #include <windowsx.h>
@@ -7,27 +8,13 @@
 #include <commctrl.h>
 #include <uxtheme.h>
 #include <ole2.h>
-#include <oleidl.h>
-#include <ocidl.h>
-#include <docobj.h>
-#include <mshtmhst.h>
-#include <mshtmcid.h>
-#include <exdisp.h>
-#include <mshtml.h>
 
-#ifndef DISPID_BEFORENAVIGATE2
-#define DISPID_BEFORENAVIGATE2	250
-#endif
-#ifndef DISPID_NEWWINDOW2
-#define DISPID_NEWWINDOW2		259
-#endif
-#ifndef DISPID_NEWWINDOW3
-#define DISPID_NEWWINDOW3		273
-#endif
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <cstdarg>
+#include <string>
+
 #include "config.h"
 #include "SciCall.h"
 #include "Helpers.h"
@@ -41,6 +28,15 @@
 #include "PreviewMode.h"
 #include "md4c/md4c.h"
 
+#if defined(_MSC_VER)
+#include <wrl.h>
+#include <wrl/event.h>
+#include <WebView2.h>
+#define NP2_USE_WEBVIEW2 1
+using Microsoft::WRL::Callback;
+using Microsoft::WRL::ComPtr;
+#endif
+
 extern "C" int __cdecl md_html(const MD_CHAR *input, MD_SIZE input_size,
 	void (*process_output)(const MD_CHAR *, MD_SIZE, void *),
 	void *userdata, unsigned parser_flags, unsigned renderer_flags);
@@ -51,59 +47,48 @@ extern HWND hwndEdit;
 #pragma comment(lib, "oleaut32.lib")
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "uxtheme.lib")
-
-#ifndef WSB_PROP_HCOLOR
-#define WSB_PROP_HCOLOR		11
-#endif
-#ifndef WSB_PROP_VCOLOR
-#define WSB_PROP_VCOLOR		12
+#if defined(NP2_USE_WEBVIEW2)
+#pragma comment(lib, "version.lib")
 #endif
 
 #ifndef NP2_COUNTOF
 #define NP2_COUNTOF(ar) (sizeof(ar) / sizeof((ar)[0]))
 #endif
 
-#define PREVIEW_LAYOUT_RETRY_MS	16
-#define PREVIEW_MAX_TEXT_BYTES	(2 * 1024 * 1024)
-#define PREVIEW_READY_TIMEOUT_MS	5000
-#define PREVIEW_SPLITTER_CY		5
-#define PREVIEW_MIN_PANE_CY		40
-#define PREVIEW_DEFAULT_PERCENT	50
-#define PREVIEW_ZOOM_MIN		50
-#define PREVIEW_ZOOM_MAX		250
-#define PREVIEW_ZOOM_STEP		10
-#define PREVIEW_ZOOM_DEFAULT	100
+#define PREVIEW_LAYOUT_RETRY_MS		16
+#define PREVIEW_DEBOUNCE_MS			420
+#define PREVIEW_DEBOUNCE_FIRST_MS	80
+#define PREVIEW_DEBOUNCE_MERMAID_MS	560
+#define PREVIEW_MAX_TEXT_BYTES		(2 * 1024 * 1024)
+#define PREVIEW_INIT_TIMEOUT_MS		15000
+#define PREVIEW_SPLITTER_CY			5
+#define PREVIEW_MIN_PANE_CY			40
+#define PREVIEW_DEFAULT_PERCENT		50
+#define PREVIEW_ZOOM_MIN			50
+#define PREVIEW_ZOOM_MAX			250
+#define PREVIEW_ZOOM_STEP			10
+#define PREVIEW_ZOOM_DEFAULT		100
 
 #define ID_PREVIEW_CTX_COPY			0xFB30
 #define ID_PREVIEW_CTX_SELECTALL	0xFB31
 #define ID_PREVIEW_CTX_OPEN_LINK	0xFB32
 #define ID_PREVIEW_CTX_COPY_LINK	0xFB33
-#define ID_PREVIEW_CTX_COPY_IMAGE	0xFB34
 
 constexpr WCHAR PREVIEW_SPLITTER_CLASS[] = L"NP2PreviewSplitter";
-constexpr UINT_PTR PREVIEW_WHEEL_SUBCLASS_ID = 1;
+constexpr WCHAR PREVIEW_VIRTUAL_HOST[] = L"np2.preview";
 
 namespace {
 
 HWND g_hwndMain;
 HWND g_hwndContainer;
 HWND g_hwndSplitter;
-IWebBrowser2 *g_pBrowser = nullptr;
-IOleObject *g_pOleObject = nullptr;
-IOleInPlaceObject *g_pInPlaceObject = nullptr;
-
-class PreviewOleSite;
-PreviewOleSite *g_pOleSite = nullptr;
 
 bool g_active;
 bool g_autoEnable;
 bool g_dirty;
 unsigned g_dirtySerial;
-bool g_blankLoaded;
 bool g_updatePosted;
 bool g_inUpdate;
-int g_pumpDepth;
-int g_waitReadyIters;
 
 int g_previewPercent = PREVIEW_DEFAULT_PERCENT;
 int g_savedPreviewPercent = PREVIEW_DEFAULT_PERCENT;
@@ -120,11 +105,35 @@ int g_lastLayoutCy;
 int g_previewZoomPercent = PREVIEW_ZOOM_DEFAULT;
 
 bool g_splitterClassRegistered;
-
 HBRUSH g_previewContainerBrush;
 
 WCHAR g_previewLogPath[MAX_PATH];
 bool g_previewLogEnabled = true;
+
+WCHAR g_previewAssetsDir[MAX_PATH];
+WCHAR g_webviewUserDataDir[MAX_PATH];
+bool g_lastHadMermaid;
+
+#if defined(NP2_USE_WEBVIEW2)
+ComPtr<ICoreWebView2Environment> g_env;
+ComPtr<ICoreWebView2Controller> g_controller;
+ComPtr<ICoreWebView2> g_webview;
+bool g_webviewCreating;
+bool g_webviewReady;
+bool g_webviewFailed;
+bool g_virtualHostMapped;
+EventRegistrationToken g_tokenNavigationStarting {};
+EventRegistrationToken g_tokenNewWindowRequested {};
+EventRegistrationToken g_tokenContextMenuRequested {};
+EventRegistrationToken g_tokenAcceleratorKeyPressed {};
+EventRegistrationToken g_tokenNavigationCompleted {};
+std::wstring g_pendingHtml;
+std::wstring g_pendingBody;
+std::wstring g_contextLinkUrl;
+bool g_contextHasSelection;
+bool g_shellReady;
+bool g_shellDark;
+#endif
 
 void PreviewMode_LogV(LPCWSTR format, va_list args) noexcept {
 	if (!g_previewLogEnabled || g_previewLogPath[0] == L'\0') {
@@ -173,10 +182,6 @@ void PreviewMode_Log(LPCWSTR format, ...) noexcept {
 	va_end(args);
 }
 
-void ApplyPreviewZoom() noexcept;
-void ApplyPreviewBrowserChrome() noexcept;
-bool IsEditInputMessage(UINT msg, HWND hwndMsg) noexcept;
-
 void PreviewMode_InitLog() noexcept {
 	WCHAR exePath[MAX_PATH];
 	if (GetModuleFileNameW(nullptr, exePath, NP2_COUNTOF(exePath)) == 0) {
@@ -185,6 +190,8 @@ void PreviewMode_InitLog() noexcept {
 	}
 	PathRemoveFileSpecW(exePath);
 	PathCombineW(g_previewLogPath, exePath, L"NotepadPreview.log");
+	PathCombineW(g_previewAssetsDir, exePath, L"preview");
+	PathCombineW(g_webviewUserDataDir, exePath, L"WebView2Data");
 
 	WCHAR env[8];
 	g_previewLogEnabled = (GetEnvironmentVariableW(L"NP2_PREVIEW_LOG", env, NP2_COUNTOF(env)) == 0)
@@ -193,161 +200,67 @@ void PreviewMode_InitLog() noexcept {
 	DeleteFileW(g_previewLogPath);
 	PreviewMode_Log(L"========== PreviewMode log started ==========");
 	PreviewMode_Log(L"Log file: %s", g_previewLogPath);
-	PreviewMode_Log(L"Disable logging: set NP2_PREVIEW_LOG=0");
+	PreviewMode_Log(L"Assets: %s", g_previewAssetsDir);
 }
 
-LPCWSTR ReadyStateName(READYSTATE rs) noexcept {
-	switch (rs) {
-	case READYSTATE_UNINITIALIZED: return L"UNINITIALIZED";
-	case READYSTATE_LOADING: return L"LOADING";
-	case READYSTATE_LOADED: return L"LOADED";
-	case READYSTATE_INTERACTIVE: return L"INTERACTIVE";
-	case READYSTATE_COMPLETE: return L"COMPLETE";
-	default: return L"UNKNOWN";
+void ShowContainer(bool show) noexcept {
+	if (g_hwndContainer) {
+		ShowWindow(g_hwndContainer, show ? SW_SHOW : SW_HIDE);
 	}
 }
 
-bool IsPreviewDarkChrome() noexcept {
-	return np2StyleTheme == StyleTheme_Dark && DarkMode_ShouldApply(true);
+void ShowSplitter(bool show) noexcept {
+	if (g_hwndSplitter) {
+		ShowWindow(g_hwndSplitter, show ? SW_SHOW : SW_HIDE);
+	}
 }
 
-IHTMLDocument2 *GetPreviewHtmlDocument() noexcept {
-	if (g_pBrowser == nullptr) {
-		return nullptr;
+void RequestRelayout() noexcept {
+	if (g_hwndMain) {
+		PostMessage(g_hwndMain, APPM_PREVIEW_RELAYOUT, 0, 0);
 	}
-	IDispatch *pDocDisp = nullptr;
-	if (FAILED(g_pBrowser->get_Document(&pDocDisp)) || pDocDisp == nullptr) {
-		return nullptr;
-	}
-	IHTMLDocument2 *pHTML = nullptr;
-	pDocDisp->QueryInterface(IID_IHTMLDocument2, reinterpret_cast<void **>(&pHTML));
-	pDocDisp->Release();
-	return pHTML;
 }
 
-bool QueryOleCommandEnabled(IUnknown *target, OLECMDID cmdId) noexcept {
-	if (target == nullptr) {
-		return false;
-	}
-	IOleCommandTarget *pCmd = nullptr;
-	if (FAILED(target->QueryInterface(IID_IOleCommandTarget, reinterpret_cast<void **>(&pCmd)))) {
-		return false;
-	}
-	OLECMD cmd = { static_cast<ULONG>(cmdId), 0 };
-	const HRESULT hr = pCmd->QueryStatus(nullptr, 1, &cmd, nullptr);
-	pCmd->Release();
-	return SUCCEEDED(hr) && (cmd.cmdf & OLECMDF_ENABLED) != 0;
-}
-
-void ExecOleCommand(IUnknown *target, OLECMDID cmdId) noexcept {
-	if (target == nullptr) {
+void SchedulePreviewUpdate() noexcept {
+	if (!g_active || g_hwndMain == nullptr) {
+		PreviewMode_Log(L"SchedulePreviewUpdate skipped active=%d hwnd=%p", g_active, g_hwndMain);
 		return;
 	}
-	IOleCommandTarget *pCmd = nullptr;
-	if (SUCCEEDED(target->QueryInterface(IID_IOleCommandTarget, reinterpret_cast<void **>(&pCmd)))) {
-		pCmd->Exec(nullptr, static_cast<ULONG>(cmdId), OLECMDEXECOPT_DODEFAULT, nullptr, nullptr);
-		pCmd->Release();
+	UINT delay = PREVIEW_DEBOUNCE_MS;
+#if defined(NP2_USE_WEBVIEW2)
+	if (!g_shellReady) {
+		delay = PREVIEW_DEBOUNCE_FIRST_MS;
+	} else if (g_lastHadMermaid) {
+		delay = PREVIEW_DEBOUNCE_MERMAID_MS;
+	}
+#endif
+	SetTimer(g_hwndMain, ID_PREVIEW_TIMER, delay, nullptr);
+}
+
+void UpdatePreviewContainerBackground() noexcept {
+	if (g_previewContainerBrush != nullptr) {
+		DeleteObject(g_previewContainerBrush);
+		g_previewContainerBrush = nullptr;
+	}
+	const COLORREF color = (np2StyleTheme == StyleTheme_Dark)
+		? RGB(0x0D, 0x11, 0x17)
+		: RGB(0xFF, 0xFF, 0xFF);
+	g_previewContainerBrush = CreateSolidBrush(color);
+	if (g_hwndContainer) {
+		SetClassLongPtr(g_hwndContainer, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(g_previewContainerBrush));
+		InvalidateRect(g_hwndContainer, nullptr, TRUE);
 	}
 }
 
-bool ExecHtmlCommand(IHTMLDocument2 *pDoc, LPCWSTR command) noexcept {
-	if (pDoc == nullptr || command == nullptr) {
+bool IsPreviewFocus() noexcept {
+	if (g_hwndContainer == nullptr) {
 		return false;
 	}
-	VARIANT empty;
-	VariantInit(&empty);
-	BSTR bCmd = SysAllocString(command);
-	if (bCmd == nullptr) {
+	const HWND focus = GetFocus();
+	if (focus == nullptr) {
 		return false;
 	}
-	const HRESULT hr = pDoc->execCommand(bCmd, VARIANT_FALSE, empty, nullptr);
-	SysFreeString(bCmd);
-	return SUCCEEDED(hr);
-}
-
-void CopyTextToClipboard(HWND hwnd, LPCWSTR text) noexcept {
-	if (text == nullptr || text[0] == L'\0') {
-		return;
-	}
-	if (!OpenClipboard(hwnd)) {
-		return;
-	}
-	EmptyClipboard();
-	const size_t bytes = (wcslen(text) + 1) * sizeof(WCHAR);
-	HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, bytes);
-	if (hMem != nullptr) {
-		WCHAR *dest = static_cast<WCHAR *>(GlobalLock(hMem));
-		if (dest != nullptr) {
-			memcpy(dest, text, bytes);
-			GlobalUnlock(hMem);
-			SetClipboardData(CF_UNICODETEXT, hMem);
-		} else {
-			GlobalFree(hMem);
-		}
-	}
-	CloseClipboard();
-}
-
-bool GetElementTagIs(IHTMLElement *pElem, LPCWSTR tagName) noexcept {
-	if (pElem == nullptr || tagName == nullptr) {
-		return false;
-	}
-	BSTR tag = nullptr;
-	if (FAILED(pElem->get_tagName(&tag)) || tag == nullptr) {
-		return false;
-	}
-	const bool match = _wcsicmp(tag, tagName) == 0;
-	SysFreeString(tag);
-	return match;
-}
-
-bool GetAnchorHref(IHTMLElement *pElem, LPWSTR url, size_t urlCch) noexcept {
-	if (pElem == nullptr || urlCch == 0) {
-		return false;
-	}
-	url[0] = L'\0';
-	IHTMLAnchorElement *pAnchor = nullptr;
-	if (FAILED(pElem->QueryInterface(IID_IHTMLAnchorElement, reinterpret_cast<void **>(&pAnchor)))) {
-		IHTMLElement *pParent = nullptr;
-		if (SUCCEEDED(pElem->get_parentElement(&pParent)) && pParent != nullptr) {
-			pParent->QueryInterface(IID_IHTMLAnchorElement, reinterpret_cast<void **>(&pAnchor));
-			pParent->Release();
-		}
-	}
-	if (pAnchor == nullptr) {
-		return false;
-	}
-	BSTR href = nullptr;
-	pAnchor->get_href(&href);
-	pAnchor->Release();
-	if (href == nullptr) {
-		return false;
-	}
-	wcsncpy(url, href, urlCch - 1);
-	url[urlCch - 1] = L'\0';
-	SysFreeString(href);
-	return url[0] != L'\0';
-}
-
-bool GetImageSrc(IHTMLElement *pElem, LPWSTR url, size_t urlCch) noexcept {
-	if (pElem == nullptr || urlCch == 0) {
-		return false;
-	}
-	url[0] = L'\0';
-	IHTMLImgElement *pImg = nullptr;
-	if (FAILED(pElem->QueryInterface(IID_IHTMLImgElement, reinterpret_cast<void **>(&pImg)))) {
-		return false;
-	}
-	BSTR src = nullptr;
-	pImg->get_src(&src);
-	pImg->Release();
-	if (src == nullptr) {
-		return false;
-	}
-	wcsncpy(url, src, urlCch - 1);
-	url[urlCch - 1] = L'\0';
-	SysFreeString(src);
-	return url[0] != L'\0';
+	return focus == g_hwndContainer || IsChild(g_hwndContainer, focus);
 }
 
 void OpenUrl(LPCWSTR url) noexcept {
@@ -355,6 +268,13 @@ void OpenUrl(LPCWSTR url) noexcept {
 		return;
 	}
 	ShellExecuteW(nullptr, L"open", url, nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+bool IsHttpOrHttpsUrl(LPCWSTR url) noexcept {
+	if (url == nullptr || url[0] == L'\0') {
+		return false;
+	}
+	return (_wcsnicmp(url, L"http://", 7) == 0) || (_wcsnicmp(url, L"https://", 8) == 0);
 }
 
 bool IsAllowedPreviewNavigation(LPCWSTR url) noexcept {
@@ -367,423 +287,114 @@ bool IsAllowedPreviewNavigation(LPCWSTR url) noexcept {
 	if (_wcsicmp(url, L"about:blank") == 0) {
 		return true;
 	}
-	// In-document anchors on the preview shell (about:blank#section).
 	if (wcsncmp(url, L"about:blank", 11) == 0 && url[11] == L'#') {
+		return true;
+	}
+	if (_wcsnicmp(url, L"data:", 5) == 0) {
+		return true;
+	}
+	// Virtual host for Mermaid / local preview assets.
+	if (_wcsnicmp(url, L"https://np2.preview/", 20) == 0
+		|| _wcsnicmp(url, L"http://np2.preview/", 19) == 0) {
 		return true;
 	}
 	return false;
 }
 
-void NotifyPreviewLinkCopied(LPCWSTR url) noexcept {
-	WCHAR display[200];
-	display[0] = L'\0';
-	if (url != nullptr && url[0] != L'\0') {
-		const size_t maxDisp = NP2_COUNTOF(display) - 4;
-		wcsncpy(display, url, maxDisp);
-		display[maxDisp] = L'\0';
-		if (wcslen(url) > maxDisp) {
-			wcscat(display, L"...");
-		}
-	}
-	WCHAR msg[280];
-	swprintf(msg, NP2_COUNTOF(msg), L"Link copied to clipboard\n%s", display);
-	ShowNotificationW(SC_NOTIFICATIONPOSITION_BOTTOMRIGHT, msg);
-}
-
-void HandlePreviewHyperlink(LPCWSTR url) noexcept {
-	if (url == nullptr || url[0] == L'\0') {
+void CopyTextToClipboard(HWND hwnd, LPCWSTR text) noexcept {
+	if (text == nullptr) {
 		return;
 	}
-	const bool ctrlDown = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
-	if (ctrlDown) {
-		OpenUrl(url);
+	const size_t len = wcslen(text);
+	HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, (len + 1) * sizeof(WCHAR));
+	if (hMem == nullptr) {
 		return;
 	}
-	CopyTextToClipboard(g_hwndMain, url);
-	NotifyPreviewLinkCopied(url);
-}
-
-LPCWSTR DispParamBstr(const DISPPARAMS *params, UINT index) noexcept {
-	if (params == nullptr || index >= params->cArgs) {
-		return nullptr;
-	}
-	const VARIANT &v = params->rgvarg[index];
-	if (v.vt == VT_BSTR && v.bstrVal != nullptr) {
-		return v.bstrVal;
-	}
-	return nullptr;
-}
-
-void SetDispBoolRef(DISPPARAMS *params, UINT index, VARIANT_BOOL value) noexcept {
-	if (params == nullptr || index >= params->cArgs) {
+	LPWSTR dest = static_cast<LPWSTR>(GlobalLock(hMem));
+	if (dest == nullptr) {
+		GlobalFree(hMem);
 		return;
 	}
-	VARIANT &v = params->rgvarg[index];
-	if (v.vt == (VT_BYREF | VT_BOOL) && v.pboolVal != nullptr) {
-		*v.pboolVal = value;
+	memcpy(dest, text, (len + 1) * sizeof(WCHAR));
+	GlobalUnlock(hMem);
+	if (!OpenClipboard(hwnd)) {
+		GlobalFree(hMem);
+		return;
 	}
+	EmptyClipboard();
+	SetClipboardData(CF_UNICODETEXT, hMem);
+	CloseClipboard();
 }
-
-void SetDispCancel(DISPPARAMS *params, VARIANT_BOOL cancel) noexcept {
-	SetDispBoolRef(params, 0, cancel);
-}
-
-class PreviewBrowserEvents final : public IDispatch {
-	ULONG m_ref = 1;
-
-public:
-	STDMETHODIMP QueryInterface(REFIID riid, void **ppv) noexcept override {
-		if (ppv == nullptr) {
-			return E_POINTER;
-		}
-		if (IsEqualIID(riid, IID_IUnknown) || IsEqualIID(riid, IID_IDispatch)) {
-			*ppv = static_cast<IDispatch *>(this);
-			AddRef();
-			return S_OK;
-		}
-		*ppv = nullptr;
-		return E_NOINTERFACE;
-	}
-	STDMETHODIMP_(ULONG) AddRef() noexcept override { return ++m_ref; }
-	STDMETHODIMP_(ULONG) Release() noexcept override {
-		const ULONG ref = --m_ref;
-		if (ref == 0) {
-			delete this;
-		}
-		return ref;
-	}
-	STDMETHODIMP GetTypeInfoCount(UINT *) noexcept override { return E_NOTIMPL; }
-	STDMETHODIMP GetTypeInfo(UINT, LCID, ITypeInfo **) noexcept override { return E_NOTIMPL; }
-	STDMETHODIMP GetIDsOfNames(REFIID, LPOLESTR *, UINT, LCID, DISPID *) noexcept override { return E_NOTIMPL; }
-	STDMETHODIMP Invoke(DISPID dispIdMember, REFIID, LCID, WORD wFlags,
-		DISPPARAMS *pDispParams, VARIANT *, EXCEPINFO *, UINT *) noexcept override {
-		if (!(wFlags & DISPATCH_METHOD) || pDispParams == nullptr) {
-			return S_OK;
-		}
-		if (dispIdMember == DISPID_BEFORENAVIGATE2 && pDispParams->cArgs >= 6) {
-			const LPCWSTR url = DispParamBstr(pDispParams, 5);
-			if (!IsAllowedPreviewNavigation(url)) {
-				SetDispCancel(pDispParams, VARIANT_TRUE);
-				HandlePreviewHyperlink(url);
-			}
-			return S_OK;
-		}
-		if (dispIdMember == DISPID_NEWWINDOW2 && pDispParams->cArgs >= 4) {
-			const LPCWSTR url = DispParamBstr(pDispParams, 0);
-			SetDispBoolRef(pDispParams, 3, VARIANT_TRUE);
-			if (url != nullptr && url[0] != L'\0' && !IsAllowedPreviewNavigation(url)) {
-				HandlePreviewHyperlink(url);
-			}
-			return S_OK;
-		}
-		if (dispIdMember == DISPID_NEWWINDOW3 && pDispParams->cArgs >= 7) {
-			const LPCWSTR url = DispParamBstr(pDispParams, 3);
-			SetDispBoolRef(pDispParams, 6, VARIANT_TRUE);
-			if (url != nullptr && url[0] != L'\0' && !IsAllowedPreviewNavigation(url)) {
-				HandlePreviewHyperlink(url);
-			}
-			return S_OK;
-		}
-		return S_OK;
-	}
-};
-
-IConnectionPoint *g_pBrowserEventsCP = nullptr;
-DWORD g_browserEventsCookie = 0;
-PreviewBrowserEvents *g_pBrowserEvents = nullptr;
-
-void DisconnectBrowserEvents() noexcept {
-	if (g_pBrowserEventsCP != nullptr && g_browserEventsCookie != 0) {
-		g_pBrowserEventsCP->Unadvise(g_browserEventsCookie);
-		g_browserEventsCookie = 0;
-	}
-	if (g_pBrowserEventsCP != nullptr) {
-		g_pBrowserEventsCP->Release();
-		g_pBrowserEventsCP = nullptr;
-	}
-	if (g_pBrowserEvents != nullptr) {
-		g_pBrowserEvents->Release();
-		g_pBrowserEvents = nullptr;
-	}
-}
-
-bool ConnectBrowserEvents() noexcept {
-	if (g_pBrowser == nullptr || g_pBrowserEventsCP != nullptr) {
-		return g_pBrowserEventsCP != nullptr;
-	}
-	IConnectionPointContainer *pCPC = nullptr;
-	HRESULT hr = g_pBrowser->QueryInterface(IID_IConnectionPointContainer, reinterpret_cast<void **>(&pCPC));
-	if (FAILED(hr) || pCPC == nullptr) {
-		PreviewMode_Log(L"ConnectBrowserEvents: no IConnectionPointContainer hr=0x%08lX", hr);
-		return false;
-	}
-	hr = pCPC->FindConnectionPoint(DIID_DWebBrowserEvents2, &g_pBrowserEventsCP);
-	pCPC->Release();
-	if (FAILED(hr) || g_pBrowserEventsCP == nullptr) {
-		PreviewMode_Log(L"ConnectBrowserEvents: FindConnectionPoint hr=0x%08lX", hr);
-		g_pBrowserEventsCP = nullptr;
-		return false;
-	}
-	g_pBrowserEvents = new PreviewBrowserEvents();
-	if (g_pBrowserEvents == nullptr) {
-		g_pBrowserEventsCP->Release();
-		g_pBrowserEventsCP = nullptr;
-		return false;
-	}
-	hr = g_pBrowserEventsCP->Advise(g_pBrowserEvents, &g_browserEventsCookie);
-	if (FAILED(hr)) {
-		PreviewMode_Log(L"ConnectBrowserEvents: Advise hr=0x%08lX", hr);
-		DisconnectBrowserEvents();
-		return false;
-	}
-	PreviewMode_Log(L"ConnectBrowserEvents: OK");
-	return true;
-}
-
-bool ShowPreviewContextMenu(DWORD dwID, POINT *ppt, IUnknown *pcmdtReserved, IDispatch *pdispObject, HWND hwndParent) noexcept {
-	if (ppt == nullptr || pcmdtReserved == nullptr) {
-		return false;
-	}
-
-	IHTMLElement *pElem = nullptr;
-	if (pdispObject != nullptr) {
-		pdispObject->QueryInterface(IID_IHTMLElement, reinterpret_cast<void **>(&pElem));
-	}
-
-	WCHAR linkUrl[2048] = {};
-	WCHAR imageUrl[2048] = {};
-	const bool isImage = (dwID == CONTEXT_MENU_IMAGE) || (pElem != nullptr && GetElementTagIs(pElem, L"IMG"));
-	const bool isAnchor = (dwID == CONTEXT_MENU_ANCHOR) || (pElem != nullptr && GetAnchorHref(pElem, linkUrl, NP2_COUNTOF(linkUrl)));
-	if (isImage && pElem != nullptr) {
-		GetImageSrc(pElem, imageUrl, NP2_COUNTOF(imageUrl));
-	}
-	if (!isAnchor && pElem != nullptr && linkUrl[0] == L'\0') {
-		GetAnchorHref(pElem, linkUrl, NP2_COUNTOF(linkUrl));
-	}
-
-	const bool canCopy = QueryOleCommandEnabled(pcmdtReserved, OLECMDID_COPY);
-	const bool canSelectAll = QueryOleCommandEnabled(pcmdtReserved, OLECMDID_SELECTALL);
-	const bool showCopy = canCopy || dwID == CONTEXT_MENU_TEXTSELECT;
-
-	HMENU hMenu = CreatePopupMenu();
-	if (hMenu == nullptr) {
-		if (pElem != nullptr) {
-			pElem->Release();
-		}
-		return false;
-	}
-
-	if (showCopy) {
-		AppendMenuW(hMenu, MF_STRING, ID_PREVIEW_CTX_COPY, L"Copy");
-	}
-	if (canSelectAll) {
-		AppendMenuW(hMenu, MF_STRING, ID_PREVIEW_CTX_SELECTALL, L"Select &All");
-	}
-	if (isAnchor && linkUrl[0] != L'\0') {
-		AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-		AppendMenuW(hMenu, MF_STRING, ID_PREVIEW_CTX_OPEN_LINK, L"Open &Link");
-		AppendMenuW(hMenu, MF_STRING, ID_PREVIEW_CTX_COPY_LINK, L"Copy &Link");
-	}
-	if (isImage) {
-		AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-		if (canCopy) {
-			AppendMenuW(hMenu, MF_STRING, ID_PREVIEW_CTX_COPY_IMAGE, L"Copy &Image");
-		} else if (imageUrl[0] != L'\0') {
-			AppendMenuW(hMenu, MF_STRING, ID_PREVIEW_CTX_COPY_LINK, L"Copy Image &URL");
-		}
-	}
-
-	if (GetMenuItemCount(hMenu) == 0) {
-		DestroyMenu(hMenu);
-		if (pElem != nullptr) {
-			pElem->Release();
-		}
-		return false;
-	}
-
-	POINT pt;
-	if (!GetCursorPos(&pt)) {
-		pt = *ppt;
-	}
-	const HWND hwndMenu = g_hwndMain != nullptr ? g_hwndMain : hwndParent;
-	const UINT selected = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_LEFTALIGN,
-		pt.x, pt.y, 0, hwndMenu, nullptr);
-	DestroyMenu(hMenu);
-
-	if (selected == 0) {
-		if (pElem != nullptr) {
-			pElem->Release();
-		}
-		return true;
-	}
-
-	IHTMLDocument2 *pDoc = GetPreviewHtmlDocument();
-	switch (selected) {
-	case ID_PREVIEW_CTX_COPY:
-		if (!ExecHtmlCommand(pDoc, L"Copy")) {
-			ExecOleCommand(pcmdtReserved, OLECMDID_COPY);
-		}
-		break;
-	case ID_PREVIEW_CTX_SELECTALL:
-		if (!ExecHtmlCommand(pDoc, L"SelectAll")) {
-			ExecOleCommand(pcmdtReserved, OLECMDID_SELECTALL);
-		}
-		break;
-	case ID_PREVIEW_CTX_OPEN_LINK:
-		OpenUrl(linkUrl);
-		break;
-	case ID_PREVIEW_CTX_COPY_LINK:
-		CopyTextToClipboard(hwndMenu, linkUrl[0] != L'\0' ? linkUrl : imageUrl);
-		break;
-	case ID_PREVIEW_CTX_COPY_IMAGE:
-		ExecOleCommand(pcmdtReserved, OLECMDID_COPY);
-		break;
-	}
-
-	if (pDoc != nullptr) {
-		pDoc->Release();
-	}
-	if (pElem != nullptr) {
-		pElem->Release();
-	}
-	PostMessage(hwndMenu, WM_NULL, 0, 0);
-	return true;
-}
-
-class PreviewOleSite final : public IOleClientSite, public IOleInPlaceSite, public IDocHostUIHandler {
-	ULONG m_ref = 1;
-	HWND m_hwndParent;
-
-public:
-	explicit PreviewOleSite(HWND hwndParent) noexcept : m_hwndParent(hwndParent) {}
-
-	STDMETHODIMP QueryInterface(REFIID riid, void **ppv) noexcept override {
-		if (ppv == nullptr) {
-			return E_POINTER;
-		}
-		if (IsEqualIID(riid, IID_IUnknown) || IsEqualIID(riid, IID_IOleClientSite)) {
-			*ppv = static_cast<IOleClientSite *>(this);
-		} else if (IsEqualIID(riid, IID_IOleInPlaceSite)) {
-			*ppv = static_cast<IOleInPlaceSite *>(this);
-		} else if (IsEqualIID(riid, IID_IDocHostUIHandler)) {
-			*ppv = static_cast<IDocHostUIHandler *>(this);
-		} else {
-			*ppv = nullptr;
-			return E_NOINTERFACE;
-		}
-		AddRef();
-		return S_OK;
-	}
-	STDMETHODIMP_(ULONG) AddRef() noexcept override { return ++m_ref; }
-	STDMETHODIMP_(ULONG) Release() noexcept override {
-		const ULONG ref = --m_ref;
-		if (ref == 0) {
-			delete this;
-		}
-		return ref;
-	}
-
-	STDMETHODIMP SaveObject() noexcept override { return S_OK; }
-	STDMETHODIMP GetMoniker(DWORD, DWORD, IMoniker **) noexcept override { return E_NOTIMPL; }
-	STDMETHODIMP GetContainer(IOleContainer **ppContainer) noexcept override {
-		if (ppContainer) {
-			*ppContainer = nullptr;
-		}
-		return E_NOINTERFACE;
-	}
-	STDMETHODIMP ShowObject() noexcept override { return S_OK; }
-	STDMETHODIMP OnShowWindow(BOOL) noexcept override { return S_OK; }
-	STDMETHODIMP RequestNewObjectLayout() noexcept override { return E_NOTIMPL; }
-
-	STDMETHODIMP GetWindow(HWND *phwnd) noexcept override {
-		if (phwnd) {
-			*phwnd = m_hwndParent;
-		}
-		return S_OK;
-	}
-	STDMETHODIMP ContextSensitiveHelp(BOOL) noexcept override { return E_NOTIMPL; }
-
-	STDMETHODIMP CanInPlaceActivate() noexcept override { return S_OK; }
-	STDMETHODIMP OnInPlaceActivate() noexcept override { return S_OK; }
-	STDMETHODIMP OnUIActivate() noexcept override { return S_OK; }
-	STDMETHODIMP GetWindowContext(IOleInPlaceFrame **ppFrame, IOleInPlaceUIWindow **ppDoc, LPRECT, LPRECT, LPOLEINPLACEFRAMEINFO) noexcept override {
-		if (ppFrame) {
-			*ppFrame = nullptr;
-		}
-		if (ppDoc) {
-			*ppDoc = nullptr;
-		}
-		return S_OK;
-	}
-	STDMETHODIMP Scroll(SIZE) noexcept override { return E_NOTIMPL; }
-	STDMETHODIMP OnUIDeactivate(BOOL) noexcept override { return S_OK; }
-	STDMETHODIMP OnInPlaceDeactivate() noexcept override { return S_OK; }
-	STDMETHODIMP DiscardUndoState() noexcept override { return S_OK; }
-	STDMETHODIMP DeactivateAndUndo() noexcept override { return S_OK; }
-	STDMETHODIMP OnPosRectChange(LPCRECT) noexcept override { return S_OK; }
-
-	STDMETHODIMP ShowContextMenu(DWORD dwID, POINT *ppt, IUnknown *pcmdtReserved, IDispatch *pdispObject) noexcept override {
-		if (ShowPreviewContextMenu(dwID, ppt, pcmdtReserved, pdispObject, m_hwndParent)) {
-			return S_OK;
-		}
-		return S_FALSE;
-	}
-	STDMETHODIMP GetHostInfo(DOCHOSTUIINFO *pInfo) noexcept override {
-		if (pInfo) {
-			pInfo->dwFlags = DOCHOSTUIFLAG_DPI_AWARE | DOCHOSTUIFLAG_THEME | DOCHOSTUIFLAG_FLAT_SCROLLBAR
-				| DOCHOSTUIFLAG_NO3DBORDER | DOCHOSTUIFLAG_NO3DOUTERBORDER;
-			pInfo->dwDoubleClick = DOCHOSTUIDBLCLK_DEFAULT;
-		}
-		return S_OK;
-	}
-	STDMETHODIMP ShowUI(DWORD, IOleInPlaceActiveObject *, IOleCommandTarget *, IOleInPlaceFrame *, IOleInPlaceUIWindow *) noexcept override { return S_FALSE; }
-	STDMETHODIMP HideUI() noexcept override { return S_OK; }
-	STDMETHODIMP UpdateUI() noexcept override { return S_OK; }
-	STDMETHODIMP EnableModeless(BOOL) noexcept override { return S_OK; }
-	STDMETHODIMP OnDocWindowActivate(BOOL) noexcept override { return S_OK; }
-	STDMETHODIMP OnFrameWindowActivate(BOOL) noexcept override { return S_OK; }
-	STDMETHODIMP ResizeBorder(LPCRECT, IOleInPlaceUIWindow *, BOOL) noexcept override { return S_OK; }
-	STDMETHODIMP TranslateAccelerator(LPMSG, const GUID *, DWORD) noexcept override { return S_FALSE; }
-	STDMETHODIMP GetOptionKeyPath(LPOLESTR *, DWORD) noexcept override { return S_FALSE; }
-	STDMETHODIMP GetDropTarget(IDropTarget *, IDropTarget **) noexcept override { return E_NOTIMPL; }
-	STDMETHODIMP GetExternal(IDispatch **) noexcept override { return S_FALSE; }
-	STDMETHODIMP TranslateUrl(DWORD, LPWSTR, LPWSTR *) noexcept override { return S_FALSE; }
-	STDMETHODIMP FilterDataObject(IDataObject *, IDataObject **) noexcept override { return S_FALSE; }
-};
 
 void AppendHtmlEscapedUtf8(const char *text, size_t len, LPWSTR &dst, size_t &remaining) noexcept {
-	WCHAR wbuf[512];
-	while (len > 0 && remaining > 1) {
-		const int chunk = static_cast<int>(min<size_t>(len, NP2_COUNTOF(wbuf) - 1));
-		const int wlen = MultiByteToWideChar(CP_UTF8, 0, text, chunk, wbuf, chunk);
-		if (wlen <= 0) {
+	size_t i = 0;
+	while (i < len && remaining > 8) {
+		const unsigned char ch = static_cast<unsigned char>(text[i]);
+		LPCWSTR repl = nullptr;
+		switch (ch) {
+		case '&': repl = L"&amp;"; break;
+		case '<': repl = L"&lt;"; break;
+		case '>': repl = L"&gt;"; break;
+		case '"': repl = L"&quot;"; break;
+		default: break;
+		}
+		if (repl != nullptr) {
+			while (*repl && remaining > 1) {
+				*dst++ = *repl++;
+				--remaining;
+			}
+			++i;
+			continue;
+		}
+		if (ch < 0x80) {
+			*dst++ = static_cast<WCHAR>(ch);
+			--remaining;
+			++i;
+			continue;
+		}
+		int seq = 1;
+		if ((ch & 0xE0) == 0xC0) {
+			seq = 2;
+		} else if ((ch & 0xF0) == 0xE0) {
+			seq = 3;
+		} else if ((ch & 0xF8) == 0xF0) {
+			seq = 4;
+		}
+		if (i + static_cast<size_t>(seq) > len) {
 			break;
 		}
-		for (int i = 0; i < wlen && remaining > 1; ++i) {
-			const WCHAR ch = wbuf[i];
-			LPCWSTR rep = nullptr;
-			switch (ch) {
-			case L'&': rep = L"&amp;"; break;
-			case L'<': rep = L"&lt;"; break;
-			case L'>': rep = L"&gt;"; break;
-			case L'"': rep = L"&quot;"; break;
-			default:
-				*dst++ = ch;
-				--remaining;
-				continue;
-			}
-			while (rep && *rep && remaining > 1) {
-				*dst++ = *rep++;
-				--remaining;
-			}
+		WCHAR wbuf[2] {};
+		const int wlen = MultiByteToWideChar(CP_UTF8, 0, text + i, seq, wbuf, 2);
+		if (wlen <= 0) {
+			++i;
+			continue;
 		}
-		text += chunk;
-		len -= chunk;
+		for (int k = 0; k < wlen && remaining > 1; ++k) {
+			*dst++ = wbuf[k];
+			--remaining;
+		}
+		i += static_cast<size_t>(seq);
 	}
 }
 
-void AppendPreviewShell(LPWSTR &dst, size_t &remaining, LPCWSTR body, bool dark) noexcept {
-	static const WCHAR prefixLight[] =
+void AppendPreviewShell(LPWSTR &dst, size_t &remaining, LPCWSTR body, bool dark, bool withMermaid) noexcept {
+	(void)dark;
+	(void)withMermaid;
+	while (*body && remaining > 1) {
+		*dst++ = *body++;
+		--remaining;
+	}
+}
+
+void ClosePreviewShell(LPWSTR &dst, size_t &remaining, bool dark, bool withMermaid) noexcept {
+	(void)dark;
+	(void)withMermaid;
+	*dst = L'\0';
+	(void)remaining;
+}
+
+void BuildPreviewShellDocument(LPWSTR html, size_t htmlCch, bool dark) noexcept {
+	static const WCHAR shellLight[] =
 		L"<!DOCTYPE html><html><head><meta charset=\"utf-8\"><base target=\"_self\"><style>"
 		L"body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;"
 		L"line-height:1.6;word-wrap:break-word;margin:16px 24px;color:#24292f;background:#fff;}"
@@ -803,10 +414,28 @@ void AppendPreviewShell(LPWSTR &dst, size_t &remaining, LPCWSTR body, bool dark)
 		L"tr:nth-child(2n){background:#f6f8fa;}hr{border:0;border-top:1px solid #d0d7de;height:0;margin:24px 0;}"
 		L"a{color:#0969da;text-decoration:none;}a:hover{text-decoration:underline;}"
 		L"img{max-width:100%;box-sizing:content-box;}del{opacity:.8;}"
+		L".mermaid{background:transparent;text-align:center;}"
+		L"#np2-content{min-height:1px;}"
 		L"html,body,*{-ms-user-select:text;user-select:text;}"
 		L"::selection{background:#B3D4FC;}"
-		L"</style></head><body>";
-	static const WCHAR prefixDark[] =
+		L"</style></head><body><div id=\"np2-content\"></div>"
+		L"<script src=\"https://np2.preview/mermaid.min.js\"></script>"
+		L"<script>(function(){"
+		L"var dark=0;"
+		L"function bootMermaid(){try{if(window.mermaid){mermaid.initialize({startOnLoad:false,securityLevel:'loose',theme:dark?'dark':'default'});}}catch(e){}}"
+		L"function convertMermaid(root){root.querySelectorAll('pre code.language-mermaid').forEach(function(code){"
+		L"var pre=code.parentElement;if(!pre)return;var div=document.createElement('div');div.className='mermaid';"
+		L"div.textContent=code.textContent;pre.replaceWith(div);});}"
+		L"async function np2Apply(html){var root=document.getElementById('np2-content');if(!root)return;"
+		L"var y=window.scrollY||document.documentElement.scrollTop||0;"
+		L"root.innerHTML=html||'';convertMermaid(root);"
+		L"try{bootMermaid();if(window.mermaid){await mermaid.run({querySelector:'#np2-content .mermaid'});}}catch(e){}"
+		L"window.scrollTo(0,y);}"
+		L"bootMermaid();"
+		L"if(window.chrome&&window.chrome.webview){window.chrome.webview.addEventListener('message',function(e){"
+		L"var data=e.data;np2Apply(typeof data==='string'?data:(data&&data.html)||'');});}"
+		L"})();</script></body></html>";
+	static const WCHAR shellDark[] =
 		L"<!DOCTYPE html><html><head><meta charset=\"utf-8\"><base target=\"_self\"><style>"
 		L"body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;"
 		L"line-height:1.6;word-wrap:break-word;margin:16px 24px;color:#c9d1d9;background:#0d1117;}"
@@ -826,30 +455,30 @@ void AppendPreviewShell(LPWSTR &dst, size_t &remaining, LPCWSTR body, bool dark)
 		L"tr:nth-child(2n){background:#161b22;}hr{border:0;border-top:1px solid #30363d;height:0;margin:24px 0;}"
 		L"a{color:#58a6ff;text-decoration:none;}a:hover{text-decoration:underline;}"
 		L"img{max-width:100%;box-sizing:content-box;}del{opacity:.8;}"
+		L".mermaid{background:transparent;text-align:center;}"
+		L"#np2-content{min-height:1px;}"
 		L"html,body,*{-ms-user-select:text;user-select:text;}"
 		L"::selection{background:#264F78;}"
-		L"html,body,pre{scrollbar-base-color:#2d2d30;scrollbar-face-color:#3e3e42;scrollbar-track-color:#0d1117;"
-		L"scrollbar-arrow-color:#c9d1d9;scrollbar-shadow-color:#1e1e1e;scrollbar-highlight-color:#3e3e42;"
-		L"scrollbar-3dlight-color:#2d2d30;scrollbar-darkshadow-color:#1e1e1e;}"
-		L"</style></head><body>";
-	LPCWSTR prefix = dark ? prefixDark : prefixLight;
-	while (*prefix && remaining > 1) {
-		*dst++ = *prefix++;
-		--remaining;
-	}
-	while (*body && remaining > 1) {
-		*dst++ = *body++;
-		--remaining;
-	}
-}
-
-void ClosePreviewShell(LPWSTR &dst, size_t &remaining) noexcept {
-	const WCHAR suffix[] = L"</body></html>";
-	for (size_t i = 0; suffix[i] && remaining > 1; ++i) {
-		*dst++ = suffix[i];
-		--remaining;
-	}
-	*dst = L'\0';
+		L"</style></head><body><div id=\"np2-content\"></div>"
+		L"<script src=\"https://np2.preview/mermaid.min.js\"></script>"
+		L"<script>(function(){"
+		L"var dark=1;"
+		L"function bootMermaid(){try{if(window.mermaid){mermaid.initialize({startOnLoad:false,securityLevel:'loose',theme:dark?'dark':'default'});}}catch(e){}}"
+		L"function convertMermaid(root){root.querySelectorAll('pre code.language-mermaid').forEach(function(code){"
+		L"var pre=code.parentElement;if(!pre)return;var div=document.createElement('div');div.className='mermaid';"
+		L"div.textContent=code.textContent;pre.replaceWith(div);});}"
+		L"async function np2Apply(html){var root=document.getElementById('np2-content');if(!root)return;"
+		L"var y=window.scrollY||document.documentElement.scrollTop||0;"
+		L"root.innerHTML=html||'';convertMermaid(root);"
+		L"try{bootMermaid();if(window.mermaid){await mermaid.run({querySelector:'#np2-content .mermaid'});}}catch(e){}"
+		L"window.scrollTo(0,y);}"
+		L"bootMermaid();"
+		L"if(window.chrome&&window.chrome.webview){window.chrome.webview.addEventListener('message',function(e){"
+		L"var data=e.data;np2Apply(typeof data==='string'?data:(data&&data.html)||'');});}"
+		L"})();</script></body></html>";
+	LPCWSTR src = dark ? shellDark : shellLight;
+	wcsncpy(html, src, htmlCch - 1);
+	html[htmlCch - 1] = L'\0';
 }
 
 struct MdHtmlBuffer {
@@ -908,15 +537,36 @@ void AppendWideFromUtf8(LPWSTR &dst, size_t &remaining, const char *utf8, size_t
 		dst += wlen;
 		remaining -= static_cast<size_t>(wlen);
 		utf8 += chunk;
-		utf8Len -= chunk;
+		utf8Len -= static_cast<size_t>(chunk);
 	}
+}
+
+bool Utf8ContainsMermaidFence(const char *text, size_t len) noexcept {
+	if (text == nullptr || len < 10) {
+		return false;
+	}
+	const char *end = text + len;
+	for (const char *p = text; p + 10 <= end; ++p) {
+		if (p[0] == '`' && p[1] == '`' && p[2] == '`') {
+			const char *lang = p + 3;
+			while (lang < end && (*lang == ' ' || *lang == '\t')) {
+				++lang;
+			}
+			if (lang + 7 <= end && _strnicmp(lang, "mermaid", 7) == 0) {
+				const char next = (lang + 7 < end) ? lang[7] : '\0';
+				if (next == '\0' || next == '\r' || next == '\n' || next == ' ' || next == '\t') {
+					return true;
+				}
+			}
+		}
+	}
+	return false;
 }
 
 void MarkdownToHtml(const char *text, size_t len, LPWSTR html, size_t htmlCch) noexcept {
 	LPWSTR dst = html;
 	size_t remaining = htmlCch;
-	const bool dark = (np2StyleTheme == StyleTheme_Dark);
-	AppendPreviewShell(dst, remaining, L"", dark);
+	html[0] = L'\0';
 
 	MdHtmlBuffer body;
 	body.cap = max<size_t>(len * 3, 8192);
@@ -935,16 +585,21 @@ void MarkdownToHtml(const char *text, size_t len, LPWSTR html, size_t htmlCch) n
 	} else {
 		AppendHtmlEscapedUtf8(text, len, dst, remaining);
 	}
-
-	ClosePreviewShell(dst, remaining);
-	PreviewMode_Log(L"MarkdownToHtml done");
+	*dst = L'\0';
+	const bool withMermaid = Utf8ContainsMermaidFence(text, len);
+	g_lastHadMermaid = withMermaid;
+	PreviewMode_Log(L"MarkdownToHtml body done mermaid=%d", withMermaid ? 1 : 0);
 }
 
 void CsvToHtml(const char *text, size_t len, LPWSTR html, size_t htmlCch) noexcept {
 	LPWSTR dst = html;
 	size_t remaining = htmlCch;
-	const bool dark = (np2StyleTheme == StyleTheme_Dark);
-	AppendPreviewShell(dst, remaining, L"<table>", dark);
+	g_lastHadMermaid = false;
+	const WCHAR openTable[] = L"<table>";
+	for (size_t i = 0; openTable[i] && remaining > 1; ++i) {
+		*dst++ = openTable[i];
+		--remaining;
+	}
 
 	const char *lineStart = text;
 	const char *end = text + len;
@@ -955,9 +610,9 @@ void CsvToHtml(const char *text, size_t len, LPWSTR html, size_t htmlCch) noexce
 			++lineEnd;
 		}
 		if (lineEnd > lineStart) {
-			const WCHAR *rowOpen = firstRow ? L"<tr><th>" : L"<tr><td>";
-			const WCHAR *cellSep = firstRow ? L"</th><th>" : L"</td><td>";
-			const WCHAR *rowClose = firstRow ? L"</th></tr>" : L"</td></tr>";
+			LPCWSTR rowOpen = firstRow ? L"<tr><th>" : L"<tr><td>";
+			LPCWSTR cellSep = firstRow ? L"</th><th>" : L"</td><td>";
+			LPCWSTR rowClose = firstRow ? L"</th></tr>" : L"</td></tr>";
 			firstRow = false;
 
 			const char *cellStart = lineStart;
@@ -967,6 +622,7 @@ void CsvToHtml(const char *text, size_t len, LPWSTR html, size_t htmlCch) noexce
 						*dst++ = *s;
 						--remaining;
 					}
+					rowOpen = L"";
 					AppendHtmlEscapedUtf8(cellStart, static_cast<size_t>(p - cellStart), dst, remaining);
 					cellStart = p + 1;
 					if (p < lineEnd) {
@@ -995,447 +651,24 @@ void CsvToHtml(const char *text, size_t len, LPWSTR html, size_t htmlCch) noexce
 		*dst++ = closeTable[i];
 		--remaining;
 	}
-	ClosePreviewShell(dst, remaining);
+	*dst = L'\0';
 }
 
 void WrapDocumentHtml(const char *text, size_t len, LPWSTR html, size_t htmlCch) noexcept {
+	g_lastHadMermaid = false;
 	if (len >= 5 && (_strnicmp(text, "<html", 5) == 0 || _strnicmp(text, "<!DOC", 5) == 0)) {
-		MultiByteToWideChar(CP_UTF8, 0, text, static_cast<int>(len), html, static_cast<int>(htmlCch));
+		const int wlen = MultiByteToWideChar(CP_UTF8, 0, text, static_cast<int>(len), html, static_cast<int>(htmlCch - 1));
+		if (wlen > 0) {
+			html[wlen] = L'\0';
+		} else {
+			html[0] = L'\0';
+		}
 		return;
 	}
 	LPWSTR dst = html;
 	size_t remaining = htmlCch;
-	const bool dark = (np2StyleTheme == StyleTheme_Dark);
-	AppendPreviewShell(dst, remaining, L"", dark);
 	AppendHtmlEscapedUtf8(text, len, dst, remaining);
-	ClosePreviewShell(dst, remaining);
-}
-
-void PumpPendingMessages() noexcept {
-	++g_pumpDepth;
-	int count = 0;
-	MSG msg;
-	while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
-		++count;
-		if (count <= 8 || (count % 50) == 0) {
-			PreviewMode_Log(L"PumpPendingMessages depth=%d n=%d msg=0x%04X hwnd=%p",
-				g_pumpDepth, count, msg.message, msg.hwnd);
-		}
-		if (count > 500) {
-			PreviewMode_Log(L"PumpPendingMessages ABORT after %d messages (depth=%d)", count, g_pumpDepth);
-			break;
-		}
-		if (msg.message == WM_QUIT) {
-			PostQuitMessage(static_cast<int>(msg.wParam));
-			break;
-		}
-		// Defer preview updates while rendering to avoid re-entrant OnPostedUpdate
-		// clearing g_updatePosted / g_dirty before the in-flight render finishes.
-		if (g_inUpdate && msg.message == APPM_PREVIEW_UPDATE) {
-			PostMessage(msg.hwnd, msg.message, msg.wParam, msg.lParam);
-			continue;
-		}
-		if (g_inUpdate && IsEditInputMessage(msg.message, msg.hwnd)) {
-			PostMessage(msg.hwnd, msg.message, msg.wParam, msg.lParam);
-			continue;
-		}
-		TranslateMessage(&msg);
-		DispatchMessage(&msg);
-	}
-	if (count > 0) {
-		PreviewMode_Log(L"PumpPendingMessages done depth=%d pumped=%d", g_pumpDepth, count);
-	}
-	--g_pumpDepth;
-}
-
-bool WaitBrowserReady(int maxMs = PREVIEW_READY_TIMEOUT_MS) noexcept {
-	if (g_pBrowser == nullptr) {
-		PreviewMode_Log(L"WaitBrowserReady: no browser");
-		return false;
-	}
-	const DWORD start = GetTickCount();
-	g_waitReadyIters = 0;
-	while (GetTickCount() - start < static_cast<DWORD>(maxMs)) {
-		++g_waitReadyIters;
-		READYSTATE rs = READYSTATE_UNINITIALIZED;
-		const HRESULT hr = g_pBrowser->get_ReadyState(&rs);
-		if (g_waitReadyIters <= 5 || (g_waitReadyIters % 25) == 0) {
-			PreviewMode_Log(L"WaitBrowserReady iter=%d hr=0x%08lX state=%s elapsed=%lums",
-				g_waitReadyIters, hr, SUCCEEDED(hr) ? ReadyStateName(rs) : L"?", GetTickCount() - start);
-		}
-		if (SUCCEEDED(hr) && rs >= READYSTATE_INTERACTIVE) {
-			PreviewMode_Log(L"WaitBrowserReady OK after %d iters (%lums)", g_waitReadyIters, GetTickCount() - start);
-			return true;
-		}
-		PumpPendingMessages();
-		Sleep(10);
-	}
-	PreviewMode_Log(L"WaitBrowserReady TIMEOUT after %d iters (%dms)", g_waitReadyIters, maxMs);
-	return false;
-}
-
-void SchedulePreviewUpdate() noexcept {
-	if (!g_active || g_hwndMain == nullptr) {
-		PreviewMode_Log(L"SchedulePreviewUpdate skipped active=%d hwnd=%p", g_active, g_hwndMain);
-		return;
-	}
-	if (!g_updatePosted) {
-		g_updatePosted = true;
-		PreviewMode_Log(L"SchedulePreviewUpdate PostMessage APPM_PREVIEW_UPDATE");
-		PostMessage(g_hwndMain, APPM_PREVIEW_UPDATE, 0, 0);
-	}
-}
-
-void DestroyBrowser() noexcept {
-	PreviewMode_Log(L"DestroyBrowser begin");
-	g_blankLoaded = false;
-	DisconnectBrowserEvents();
-	if (g_pInPlaceObject) {
-		g_pInPlaceObject->InPlaceDeactivate();
-		g_pInPlaceObject->Release();
-		g_pInPlaceObject = nullptr;
-	}
-	if (g_pOleObject) {
-		g_pOleObject->Close(OLECLOSE_NOSAVE);
-		g_pOleObject->Release();
-		g_pOleObject = nullptr;
-	}
-	if (g_pBrowser) {
-		g_pBrowser->Release();
-		g_pBrowser = nullptr;
-	}
-	if (g_pOleSite) {
-		g_pOleSite->Release();
-		g_pOleSite = nullptr;
-	}
-	PreviewMode_Log(L"DestroyBrowser end");
-}
-
-bool EnsureBrowser() noexcept {
-	if (g_pBrowser != nullptr) {
-		PreviewMode_Log(L"EnsureBrowser: reuse existing browser");
-		return true;
-	}
-	if (g_hwndContainer == nullptr) {
-		PreviewMode_Log(L"EnsureBrowser: no container hwnd");
-		return false;
-	}
-	RECT rc;
-	GetClientRect(g_hwndContainer, &rc);
-	PreviewMode_Log(L"EnsureBrowser: container rect=%dx%d", rc.right, rc.bottom);
-	if (rc.right <= 0 || rc.bottom <= 0) {
-		PreviewMode_Log(L"EnsureBrowser: container size zero");
-		return false;
-	}
-
-	PreviewMode_Log(L"EnsureBrowser: creating OleSite");
-	g_pOleSite = new PreviewOleSite(g_hwndContainer);
-	if (g_pOleSite == nullptr) {
-		PreviewMode_Log(L"EnsureBrowser: OleSite alloc failed");
-		return false;
-	}
-
-	PreviewMode_Log(L"EnsureBrowser: CoCreateInstance WebBrowser...");
-	const DWORD t0 = GetTickCount();
-	HRESULT hr = CoCreateInstance(CLSID_WebBrowser, nullptr,
-		CLSCTX_INPROC_SERVER | CLSCTX_INPROC_HANDLER, IID_IOleObject,
-		reinterpret_cast<void **>(&g_pOleObject));
-	PreviewMode_Log(L"EnsureBrowser: CoCreateInstance hr=0x%08lX (%lums)", hr, GetTickCount() - t0);
-	if (FAILED(hr) || g_pOleObject == nullptr) {
-		g_pOleSite->Release();
-		g_pOleSite = nullptr;
-		return false;
-	}
-
-	hr = g_pOleObject->SetClientSite(g_pOleSite);
-	PreviewMode_Log(L"EnsureBrowser: SetClientSite hr=0x%08lX", hr);
-	if (FAILED(hr)) {
-		DestroyBrowser();
-		return false;
-	}
-
-	OleSetContainedObject(g_pOleObject, TRUE);
-	g_pOleObject->QueryInterface(IID_IWebBrowser2, reinterpret_cast<void **>(&g_pBrowser));
-	g_pOleObject->QueryInterface(IID_IOleInPlaceObject, reinterpret_cast<void **>(&g_pInPlaceObject));
-
-	PreviewMode_Log(L"EnsureBrowser: DoVerb INPLACEACTIVATE...");
-	const DWORD t1 = GetTickCount();
-	hr = g_pOleObject->DoVerb(OLEIVERB_INPLACEACTIVATE, nullptr, g_pOleSite, 0, g_hwndContainer, &rc);
-	PreviewMode_Log(L"EnsureBrowser: DoVerb hr=0x%08lX (%lums)", hr, GetTickCount() - t1);
-	if (FAILED(hr)) {
-		DestroyBrowser();
-		return false;
-	}
-	if (g_pInPlaceObject) {
-		g_pInPlaceObject->SetObjectRects(&rc, &rc);
-	}
-	if (g_pBrowser) {
-		g_pBrowser->put_Silent(VARIANT_TRUE);
-		ConnectBrowserEvents();
-
-		PreviewMode_Log(L"EnsureBrowser: Navigate2 about:blank...");
-		const DWORD t2 = GetTickCount();
-		VARIANT v;
-		VariantInit(&v);
-		v.vt = VT_BSTR;
-		v.bstrVal = SysAllocString(L"about:blank");
-		hr = g_pBrowser->Navigate2(&v, nullptr, nullptr, nullptr, nullptr);
-		VariantClear(&v);
-		PreviewMode_Log(L"EnsureBrowser: Navigate2 hr=0x%08lX (%lums)", hr, GetTickCount() - t2);
-		const bool ready = WaitBrowserReady();
-		PreviewMode_Log(L"EnsureBrowser: WaitBrowserReady after navigate=%s", ready ? L"yes" : L"no");
-		g_blankLoaded = ready;
-	}
-	const bool ok = g_pBrowser != nullptr;
-	PreviewMode_Log(L"EnsureBrowser: done ok=%d", ok);
-	if (ok) {
-		ApplyPreviewBrowserChrome();
-	}
-	return ok;
-}
-
-bool WriteHtmlToDocument(IHTMLDocument2 *pHTML, LPCWSTR html) noexcept {
-	if (pHTML == nullptr || html == nullptr) {
-		return false;
-	}
-
-	SAFEARRAY *psa = SafeArrayCreateVector(VT_VARIANT, 0, 1);
-	if (psa == nullptr) {
-		PreviewMode_Log(L"WriteHtmlToDocument: SafeArrayCreate failed");
-		return false;
-	}
-	VARIANT *pVar = nullptr;
-	if (FAILED(SafeArrayAccessData(psa, reinterpret_cast<void **>(&pVar)))) {
-		SafeArrayDestroy(psa);
-		PreviewMode_Log(L"WriteHtmlToDocument: SafeArrayAccessData failed");
-		return false;
-	}
-	pVar->vt = VT_BSTR;
-	pVar->bstrVal = SysAllocString(html);
-	const bool allocFailed = (pVar->bstrVal == nullptr);
-	SafeArrayUnaccessData(psa);
-	if (allocFailed) {
-		SafeArrayDestroy(psa);
-		PreviewMode_Log(L"WriteHtmlToDocument: SysAllocString failed");
-		return false;
-	}
-
-	VARIANT optional[3];
-	for (int i = 0; i < 3; ++i) {
-		VariantInit(&optional[i]);
-		optional[i].vt = VT_ERROR;
-		optional[i].scode = DISP_E_PARAMNOTFOUND;
-	}
-
-	BSTR openUrl = SysAllocString(L"about:blank");
-	const HRESULT hrOpen = pHTML->open(openUrl, optional[0], optional[1], optional[2], nullptr);
-	SysFreeString(openUrl);
-	if (FAILED(hrOpen)) {
-		PreviewMode_Log(L"WriteHtmlToDocument: open hr=0x%08lX", hrOpen);
-		SafeArrayDestroy(psa);
-		return false;
-	}
-
-	const DWORD t0 = GetTickCount();
-	const HRESULT hrWrite = pHTML->write(psa);
-	const HRESULT hrClose = pHTML->close();
-	SafeArrayDestroy(psa);
-	PreviewMode_Log(L"WriteHtmlToDocument: write hr=0x%08lX close hr=0x%08lX (%lums)",
-		hrWrite, hrClose, GetTickCount() - t0);
-	return SUCCEEDED(hrWrite) && SUCCEEDED(hrClose);
-}
-
-struct PreviewScrollState {
-	long top = 0;
-	long left = 0;
-	long scrollHeight = 0;
-	long clientHeight = 0;
-	bool valid = false;
-};
-
-bool ReadPreviewScrollFromElement(IHTMLElement *pElem, PreviewScrollState &state) noexcept {
-	if (pElem == nullptr) {
-		return false;
-	}
-	IHTMLElement2 *pElem2 = nullptr;
-	const HRESULT hrQI = pElem->QueryInterface(IID_IHTMLElement2, reinterpret_cast<void **>(&pElem2));
-	pElem->Release();
-	if (FAILED(hrQI) || pElem2 == nullptr) {
-		return false;
-	}
-	long top = 0;
-	long left = 0;
-	long scrollHeight = 0;
-	long clientHeight = 0;
-	const bool ok = SUCCEEDED(pElem2->get_scrollTop(&top))
-		&& SUCCEEDED(pElem2->get_scrollLeft(&left))
-		&& SUCCEEDED(pElem2->get_scrollHeight(&scrollHeight))
-		&& SUCCEEDED(pElem2->get_clientHeight(&clientHeight));
-	pElem2->Release();
-	if (!ok) {
-		return false;
-	}
-	state.top = top;
-	state.left = left;
-	state.scrollHeight = scrollHeight;
-	state.clientHeight = clientHeight;
-	state.valid = true;
-	return true;
-}
-
-PreviewScrollState GetPreviewScrollState(IHTMLDocument2 *pDoc) noexcept {
-	PreviewScrollState state;
-	if (pDoc == nullptr) {
-		return state;
-	}
-	IHTMLDocument3 *pDoc3 = nullptr;
-	if (SUCCEEDED(pDoc->QueryInterface(IID_IHTMLDocument3, reinterpret_cast<void **>(&pDoc3)))) {
-		IHTMLElement *pElem = nullptr;
-		if (SUCCEEDED(pDoc3->get_documentElement(&pElem))) {
-			ReadPreviewScrollFromElement(pElem, state);
-		}
-		pDoc3->Release();
-	}
-	if (!state.valid) {
-		IHTMLElement *pElem = nullptr;
-		if (SUCCEEDED(pDoc->get_body(&pElem))) {
-			ReadPreviewScrollFromElement(pElem, state);
-		}
-	}
-	return state;
-}
-
-long ComputeRestoredScrollTop(const PreviewScrollState &saved, long newScrollHeight, long newClientHeight) noexcept {
-	const long oldRange = saved.scrollHeight - saved.clientHeight;
-	const long newRange = newScrollHeight - newClientHeight;
-	if (saved.top <= 0 || oldRange <= 0) {
-		return 0;
-	}
-	if (newRange <= 0) {
-		return 0;
-	}
-	if (saved.top >= oldRange) {
-		return newRange;
-	}
-	return static_cast<long>((static_cast<long long>(saved.top) * newRange) / oldRange);
-}
-
-void ApplyPreviewScrollToElement(IHTMLElement *pElem, const PreviewScrollState &saved) noexcept {
-	if (pElem == nullptr || !saved.valid) {
-		return;
-	}
-	IHTMLElement2 *pElem2 = nullptr;
-	const HRESULT hrQI = pElem->QueryInterface(IID_IHTMLElement2, reinterpret_cast<void **>(&pElem2));
-	pElem->Release();
-	if (FAILED(hrQI) || pElem2 == nullptr) {
-		return;
-	}
-	long scrollHeight = 0;
-	long clientHeight = 0;
-	if (SUCCEEDED(pElem2->get_scrollHeight(&scrollHeight)) && SUCCEEDED(pElem2->get_clientHeight(&clientHeight))) {
-		const long top = ComputeRestoredScrollTop(saved, scrollHeight, clientHeight);
-		pElem2->put_scrollTop(top);
-		pElem2->put_scrollLeft(saved.left);
-	}
-	pElem2->Release();
-}
-
-void RestorePreviewScrollState(const PreviewScrollState &saved) noexcept {
-	if (!saved.valid) {
-		return;
-	}
-	IHTMLDocument2 *pDoc = GetPreviewHtmlDocument();
-	if (pDoc == nullptr) {
-		return;
-	}
-	IHTMLDocument3 *pDoc3 = nullptr;
-	if (SUCCEEDED(pDoc->QueryInterface(IID_IHTMLDocument3, reinterpret_cast<void **>(&pDoc3)))) {
-		IHTMLElement *pElem = nullptr;
-		if (SUCCEEDED(pDoc3->get_documentElement(&pElem))) {
-			ApplyPreviewScrollToElement(pElem, saved);
-		}
-		pDoc3->Release();
-	}
-	IHTMLElement *pElem = nullptr;
-	if (SUCCEEDED(pDoc->get_body(&pElem))) {
-		ApplyPreviewScrollToElement(pElem, saved);
-	}
-	IHTMLWindow2 *pWindow = nullptr;
-	if (SUCCEEDED(pDoc->get_parentWindow(&pWindow)) && pWindow != nullptr) {
-		long top = saved.top;
-		IHTMLDocument3 *pDoc3Scroll = nullptr;
-		if (SUCCEEDED(pDoc->QueryInterface(IID_IHTMLDocument3, reinterpret_cast<void **>(&pDoc3Scroll)))) {
-			IHTMLElement *pScrollElem = nullptr;
-			if (SUCCEEDED(pDoc3Scroll->get_documentElement(&pScrollElem))) {
-				IHTMLElement2 *pElem2 = nullptr;
-				if (SUCCEEDED(pScrollElem->QueryInterface(IID_IHTMLElement2, reinterpret_cast<void **>(&pElem2)))) {
-					long scrollHeight = 0;
-					long clientHeight = 0;
-					if (SUCCEEDED(pElem2->get_scrollHeight(&scrollHeight)) && SUCCEEDED(pElem2->get_clientHeight(&clientHeight))) {
-						top = ComputeRestoredScrollTop(saved, scrollHeight, clientHeight);
-					}
-					pElem2->Release();
-				}
-				pScrollElem->Release();
-			}
-			pDoc3Scroll->Release();
-		}
-		pWindow->scrollTo(saved.left, top);
-		pWindow->Release();
-	}
-	pDoc->Release();
-}
-
-bool LoadHtmlIntoBrowser(LPCWSTR html) noexcept {
-	if (g_pBrowser == nullptr || html == nullptr) {
-		PreviewMode_Log(L"LoadHtmlIntoBrowser: null browser/html");
-		return false;
-	}
-	const size_t htmlLen = wcslen(html);
-	PreviewMode_Log(L"LoadHtmlIntoBrowser: html chars=%lu blankLoaded=%d", static_cast<unsigned long>(htmlLen), g_blankLoaded);
-	if (!g_blankLoaded) {
-		VARIANT v;
-		VariantInit(&v);
-		v.vt = VT_BSTR;
-		v.bstrVal = SysAllocString(L"about:blank");
-		const HRESULT hrNav = g_pBrowser->Navigate2(&v, nullptr, nullptr, nullptr, nullptr);
-		VariantClear(&v);
-		PreviewMode_Log(L"LoadHtmlIntoBrowser: Navigate2 hr=0x%08lX", hrNav);
-		if (!WaitBrowserReady()) {
-			return false;
-		}
-		g_blankLoaded = true;
-	}
-
-	if (!WaitBrowserReady(500)) {
-		PreviewMode_Log(L"LoadHtmlIntoBrowser: short WaitBrowserReady failed");
-		return false;
-	}
-
-	PreviewMode_Log(L"LoadHtmlIntoBrowser: get_Document...");
-	IDispatch *pDoc = nullptr;
-	const HRESULT hrDoc = g_pBrowser->get_Document(&pDoc);
-	PreviewMode_Log(L"LoadHtmlIntoBrowser: get_Document hr=0x%08lX doc=%p", hrDoc, pDoc);
-	if (FAILED(hrDoc) || pDoc == nullptr) {
-		return false;
-	}
-	IHTMLDocument2 *pHTML = nullptr;
-	const HRESULT hrQI = pDoc->QueryInterface(IID_IHTMLDocument2, reinterpret_cast<void **>(&pHTML));
-	pDoc->Release();
-	PreviewMode_Log(L"LoadHtmlIntoBrowser: QI IHTMLDocument2 hr=0x%08lX", hrQI);
-	if (FAILED(hrQI) || pHTML == nullptr) {
-		return false;
-	}
-
-	const PreviewScrollState scroll = GetPreviewScrollState(pHTML);
-	const bool loaded = WriteHtmlToDocument(pHTML, html);
-	pHTML->Release();
-	if (loaded) {
-		ApplyPreviewZoom();
-		RestorePreviewScrollState(scroll);
-		ApplyPreviewBrowserChrome();
-	}
-	return loaded;
+	*dst = L'\0';
 }
 
 void GetDocumentUtf8(char *text, size_t textCapacity) noexcept {
@@ -1468,62 +701,480 @@ void GetDocumentUtf8(char *text, size_t textCapacity) noexcept {
 	NP2HeapFree(wide);
 }
 
-struct EditFocusState {
-	HWND hwndFocus;
-	Sci_Position anchor;
-	Sci_Position current;
-	bool editHadFocus;
-};
+#if defined(NP2_USE_WEBVIEW2)
 
-EditFocusState SaveEditFocusState() noexcept {
-	EditFocusState state {};
-	state.hwndFocus = GetFocus();
-	if (hwndEdit != nullptr) {
-		state.editHadFocus = (state.hwndFocus == hwndEdit || IsChild(hwndEdit, state.hwndFocus));
-		state.anchor = SciCall_GetAnchor();
-		state.current = SciCall_GetCurrentPos();
-	}
-	return state;
-}
-
-void RestoreEditFocusState(const EditFocusState &state) noexcept {
-	if (!state.editHadFocus || hwndEdit == nullptr) {
+void ApplyPreviewZoom() noexcept {
+	if (g_controller == nullptr) {
 		return;
 	}
-	if (SciCall_GetAnchor() != state.anchor || SciCall_GetCurrentPos() != state.current) {
-		SciCall_SetSel(state.anchor, state.current);
+	const double factor = static_cast<double>(g_previewZoomPercent) / 100.0;
+	g_controller->put_ZoomFactor(factor);
+}
+
+void ResizeWebViewToContainer() noexcept {
+	if (g_controller == nullptr || g_hwndContainer == nullptr) {
+		return;
 	}
-	const HWND hwndFocus = GetFocus();
-	if (hwndFocus != hwndEdit && hwndFocus != state.hwndFocus) {
-		SetFocus(hwndEdit);
+	RECT rc {};
+	GetClientRect(g_hwndContainer, &rc);
+	if (rc.right <= rc.left || rc.bottom <= rc.top) {
+		PreviewMode_Log(L"ResizeWebViewToContainer skipped empty bounds %dx%d",
+			rc.right - rc.left, rc.bottom - rc.top);
+		return;
+	}
+	g_controller->put_Bounds(rc);
+}
+
+void ShowWebViewUnavailableHtml(LPCWSTR message) noexcept {
+	WCHAR html[1024];
+	swprintf(html, NP2_COUNTOF(html),
+		L"<!DOCTYPE html><html><body style=\"font-family:Segoe UI;margin:24px;color:#24292f\">"
+		L"<h2>Preview unavailable</h2><p>%s</p>"
+		L"<p>Install the Evergreen <b>WebView2 Runtime</b> and restart Notepad.</p>"
+		L"</body></html>",
+		message ? message : L"WebView2 failed to initialize.");
+	g_pendingHtml = html;
+}
+
+HRESULT HandleNavigationStarting(ICoreWebView2 * /*sender*/, ICoreWebView2NavigationStartingEventArgs *args) {
+	LPWSTR uri = nullptr;
+	if (FAILED(args->get_Uri(&uri)) || uri == nullptr) {
+		return S_OK;
+	}
+	if (!IsAllowedPreviewNavigation(uri)) {
+		args->put_Cancel(TRUE);
+		if (IsHttpOrHttpsUrl(uri)) {
+			OpenUrl(uri);
+		}
+		PreviewMode_Log(L"NavigationStarting cancel uri=%s", uri);
+	}
+	CoTaskMemFree(uri);
+	return S_OK;
+}
+
+HRESULT HandleNewWindowRequested(ICoreWebView2 * /*sender*/, ICoreWebView2NewWindowRequestedEventArgs *args) {
+	args->put_Handled(TRUE);
+	LPWSTR uri = nullptr;
+	if (SUCCEEDED(args->get_Uri(&uri)) && uri != nullptr) {
+		if (IsHttpOrHttpsUrl(uri)) {
+			OpenUrl(uri);
+		}
+		CoTaskMemFree(uri);
+	}
+	return S_OK;
+}
+
+void ExecPreviewCopy() noexcept {
+	if (g_webview == nullptr) {
+		return;
+	}
+	g_webview->ExecuteScript(L"document.execCommand('copy')", nullptr);
+}
+
+void ExecPreviewSelectAll() noexcept {
+	if (g_webview == nullptr) {
+		return;
+	}
+	g_webview->ExecuteScript(L"document.execCommand('selectAll')", nullptr);
+}
+
+bool ShowPreviewContextMenu(POINT screenPt) noexcept {
+	HMENU hMenu = CreatePopupMenu();
+	if (hMenu == nullptr) {
+		return false;
+	}
+	if (g_contextHasSelection) {
+		AppendMenuW(hMenu, MF_STRING, ID_PREVIEW_CTX_COPY, L"&Copy");
+	}
+	AppendMenuW(hMenu, MF_STRING, ID_PREVIEW_CTX_SELECTALL, L"Select &All");
+	if (!g_contextLinkUrl.empty()) {
+		AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+		AppendMenuW(hMenu, MF_STRING, ID_PREVIEW_CTX_OPEN_LINK, L"&Open Link");
+		AppendMenuW(hMenu, MF_STRING, ID_PREVIEW_CTX_COPY_LINK, L"Copy &Link");
+	}
+	const UINT cmd = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screenPt.x, screenPt.y, 0, g_hwndMain, nullptr);
+	DestroyMenu(hMenu);
+	switch (cmd) {
+	case ID_PREVIEW_CTX_COPY:
+		ExecPreviewCopy();
+		break;
+	case ID_PREVIEW_CTX_SELECTALL:
+		ExecPreviewSelectAll();
+		break;
+	case ID_PREVIEW_CTX_OPEN_LINK:
+		if (!g_contextLinkUrl.empty()) {
+			OpenUrl(g_contextLinkUrl.c_str());
+		}
+		break;
+	case ID_PREVIEW_CTX_COPY_LINK:
+		if (!g_contextLinkUrl.empty()) {
+			CopyTextToClipboard(g_hwndMain, g_contextLinkUrl.c_str());
+		}
+		break;
+	default:
+		break;
+	}
+	return true;
+}
+
+HRESULT HandleContextMenuRequested(ICoreWebView2 * /*sender*/, ICoreWebView2ContextMenuRequestedEventArgs *args) {
+	args->put_Handled(TRUE);
+	g_contextLinkUrl.clear();
+	g_contextHasSelection = false;
+
+	ComPtr<ICoreWebView2ContextMenuTarget> target;
+	if (SUCCEEDED(args->get_ContextMenuTarget(&target)) && target) {
+		BOOL hasSelection = FALSE;
+		target->get_HasSelection(&hasSelection);
+		g_contextHasSelection = hasSelection != FALSE;
+		BOOL hasLink = FALSE;
+		target->get_HasLinkUri(&hasLink);
+		if (hasLink) {
+			LPWSTR link = nullptr;
+			if (SUCCEEDED(target->get_LinkUri(&link)) && link != nullptr) {
+				g_contextLinkUrl = link;
+				CoTaskMemFree(link);
+			}
+		}
+	}
+
+	POINT pt {};
+	args->get_Location(&pt);
+	if (g_hwndContainer) {
+		ClientToScreen(g_hwndContainer, &pt);
+	}
+	ShowPreviewContextMenu(pt);
+	return S_OK;
+}
+
+HRESULT HandleAcceleratorKeyPressed(ICoreWebView2Controller * /*sender*/, ICoreWebView2AcceleratorKeyPressedEventArgs *args) {
+	COREWEBVIEW2_KEY_EVENT_KIND kind = COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN;
+	args->get_KeyEventKind(&kind);
+	if (kind != COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN && kind != COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN) {
+		return S_OK;
+	}
+	UINT key = 0;
+	args->get_VirtualKey(&key);
+	INT lParam = 0;
+	args->get_KeyEventLParam(&lParam);
+	const bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+	if (!ctrl) {
+		return S_OK;
+	}
+	if (key == 'C' || key == VK_INSERT) {
+		args->put_Handled(TRUE);
+		ExecPreviewCopy();
+	} else if (key == 'A') {
+		args->put_Handled(TRUE);
+		ExecPreviewSelectAll();
+	}
+	(void)lParam;
+	return S_OK;
+}
+
+void PostBodyHtml(LPCWSTR bodyHtml) noexcept {
+	if (g_webview == nullptr || bodyHtml == nullptr) {
+		return;
+	}
+	const HRESULT hr = g_webview->PostWebMessageAsString(bodyHtml);
+	PreviewMode_Log(L"PostWebMessageAsString hr=0x%08lX len=%zu", hr, wcslen(bodyHtml));
+}
+
+void FlushPendingBody() noexcept {
+	if (!g_pendingBody.empty()) {
+		PostBodyHtml(g_pendingBody.c_str());
+		g_pendingBody.clear();
 	}
 }
 
-bool IsEditInputMessage(UINT msg, HWND hwndMsg) noexcept {
-	if (hwndEdit == nullptr || hwndMsg == nullptr) {
-		return false;
+HRESULT HandleNavigationCompleted(ICoreWebView2 * /*sender*/, ICoreWebView2NavigationCompletedEventArgs *args) {
+	BOOL success = FALSE;
+	if (args) {
+		args->get_IsSuccess(&success);
 	}
-	if (hwndMsg != hwndEdit && !IsChild(hwndEdit, hwndMsg)) {
-		return false;
+	g_shellReady = success != FALSE;
+	PreviewMode_Log(L"NavigationCompleted success=%d", g_shellReady ? 1 : 0);
+	if (g_shellReady) {
+		FlushPendingBody();
 	}
-	if (msg >= WM_KEYFIRST && msg <= WM_KEYLAST) {
-		return true;
+	return S_OK;
+}
+
+void NavigatePendingHtml() noexcept {
+	if (g_webview == nullptr || g_pendingHtml.empty()) {
+		return;
 	}
-	if (msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST) {
-		return true;
+	g_shellReady = false;
+	const HRESULT hr = g_webview->NavigateToString(g_pendingHtml.c_str());
+	PreviewMode_Log(L"NavigateToString shell hr=0x%08lX len=%zu", hr, g_pendingHtml.size());
+	g_pendingHtml.clear();
+	ApplyPreviewZoom();
+}
+
+void AttachWebViewHandlers() noexcept {
+	if (g_webview == nullptr || g_controller == nullptr) {
+		return;
 	}
-	switch (msg) {
-	case WM_IME_CHAR:
-	case WM_IME_COMPOSITION:
-	case WM_IME_STARTCOMPOSITION:
-	case WM_IME_ENDCOMPOSITION:
-	case WM_IME_NOTIFY:
-	case WM_UNICHAR:
-		return true;
-	default:
-		return false;
+
+	g_webview->add_NavigationStarting(
+		Callback<ICoreWebView2NavigationStartingEventHandler>(
+			[](ICoreWebView2 *sender, ICoreWebView2NavigationStartingEventArgs *args) -> HRESULT {
+				return HandleNavigationStarting(sender, args);
+			}).Get(),
+		&g_tokenNavigationStarting);
+
+	g_webview->add_NavigationCompleted(
+		Callback<ICoreWebView2NavigationCompletedEventHandler>(
+			[](ICoreWebView2 *sender, ICoreWebView2NavigationCompletedEventArgs *args) -> HRESULT {
+				return HandleNavigationCompleted(sender, args);
+			}).Get(),
+		&g_tokenNavigationCompleted);
+
+	g_webview->add_NewWindowRequested(
+		Callback<ICoreWebView2NewWindowRequestedEventHandler>(
+			[](ICoreWebView2 *sender, ICoreWebView2NewWindowRequestedEventArgs *args) -> HRESULT {
+				return HandleNewWindowRequested(sender, args);
+			}).Get(),
+		&g_tokenNewWindowRequested);
+
+	ComPtr<ICoreWebView2_11> webview11;
+	if (SUCCEEDED(g_webview.As(&webview11)) && webview11) {
+		webview11->add_ContextMenuRequested(
+			Callback<ICoreWebView2ContextMenuRequestedEventHandler>(
+				[](ICoreWebView2 *sender, ICoreWebView2ContextMenuRequestedEventArgs *args) -> HRESULT {
+					return HandleContextMenuRequested(sender, args);
+				}).Get(),
+			&g_tokenContextMenuRequested);
+	}
+
+	g_controller->add_AcceleratorKeyPressed(
+		Callback<ICoreWebView2AcceleratorKeyPressedEventHandler>(
+			[](ICoreWebView2Controller *sender, ICoreWebView2AcceleratorKeyPressedEventArgs *args) -> HRESULT {
+				return HandleAcceleratorKeyPressed(sender, args);
+			}).Get(),
+		&g_tokenAcceleratorKeyPressed);
+
+	ComPtr<ICoreWebView2Settings> settings;
+	if (SUCCEEDED(g_webview->get_Settings(&settings)) && settings) {
+		settings->put_IsScriptEnabled(TRUE);
+		settings->put_AreDefaultScriptDialogsEnabled(TRUE);
+		settings->put_IsWebMessageEnabled(TRUE);
+		settings->put_AreDefaultContextMenusEnabled(FALSE);
+		settings->put_AreDevToolsEnabled(FALSE);
+		settings->put_IsStatusBarEnabled(FALSE);
+		settings->put_IsZoomControlEnabled(FALSE);
+	}
+
+	if (!g_virtualHostMapped && g_previewAssetsDir[0] != L'\0' && PathFileExistsW(g_previewAssetsDir)) {
+		ComPtr<ICoreWebView2_3> webview3;
+		if (SUCCEEDED(g_webview.As(&webview3)) && webview3) {
+			const HRESULT mapHr = webview3->SetVirtualHostNameToFolderMapping(
+				PREVIEW_VIRTUAL_HOST, g_previewAssetsDir, COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
+			g_virtualHostMapped = SUCCEEDED(mapHr);
+			PreviewMode_Log(L"SetVirtualHostNameToFolderMapping hr=0x%08lX dir=%s", mapHr, g_previewAssetsDir);
+		}
+	}
+
+	g_controller->put_IsVisible(TRUE);
+	ResizeWebViewToContainer();
+	ApplyPreviewZoom();
+}
+
+void OnControllerCreated(HRESULT result, ICoreWebView2Controller *controller) {
+	g_webviewCreating = false;
+	if (FAILED(result) || controller == nullptr) {
+		g_webviewFailed = true;
+		PreviewMode_Log(L"CreateCoreWebView2Controller failed hr=0x%08lX", result);
+		ShowWebViewUnavailableHtml(L"CreateCoreWebView2Controller failed.");
+		return;
+	}
+	g_controller = controller;
+	HRESULT hr = g_controller->get_CoreWebView2(&g_webview);
+	if (FAILED(hr) || g_webview == nullptr) {
+		g_webviewFailed = true;
+		PreviewMode_Log(L"get_CoreWebView2 failed hr=0x%08lX", hr);
+		ShowWebViewUnavailableHtml(L"get_CoreWebView2 failed.");
+		return;
+	}
+	g_webviewReady = true;
+	AttachWebViewHandlers();
+	NavigatePendingHtml();
+	PreviewMode_Log(L"WebView2 controller ready");
+}
+
+void OnEnvironmentCreated(HRESULT result, ICoreWebView2Environment *env) {
+	if (FAILED(result) || env == nullptr) {
+		g_webviewCreating = false;
+		g_webviewFailed = true;
+		PreviewMode_Log(L"CreateCoreWebView2Environment failed hr=0x%08lX", result);
+		ShowWebViewUnavailableHtml(L"WebView2 Runtime is missing or failed to start.");
+		return;
+	}
+	g_env = env;
+	if (g_hwndContainer == nullptr) {
+		g_webviewCreating = false;
+		g_webviewFailed = true;
+		return;
+	}
+	const HRESULT hr = g_env->CreateCoreWebView2Controller(
+		g_hwndContainer,
+		Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+			[](HRESULT result, ICoreWebView2Controller *controller) -> HRESULT {
+				OnControllerCreated(result, controller);
+				return S_OK;
+			}).Get());
+	if (FAILED(hr)) {
+		g_webviewCreating = false;
+		g_webviewFailed = true;
+		PreviewMode_Log(L"CreateCoreWebView2Controller call failed hr=0x%08lX", hr);
+		ShowWebViewUnavailableHtml(L"CreateCoreWebView2Controller call failed.");
 	}
 }
+
+void PumpMessagesForWebViewInit(DWORD timeoutMs) noexcept {
+	const DWORD start = GetTickCount();
+	while (!g_webviewReady && !g_webviewFailed && (GetTickCount() - start) < timeoutMs) {
+		MSG msg;
+		while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+			if (msg.message == WM_QUIT) {
+				PostQuitMessage(static_cast<int>(msg.wParam));
+				return;
+			}
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+		}
+		if (!g_webviewReady && !g_webviewFailed) {
+			MsgWaitForMultipleObjects(0, nullptr, FALSE, 50, QS_ALLINPUT);
+		}
+	}
+}
+
+void DestroyBrowser() noexcept {
+	PreviewMode_Log(L"DestroyBrowser begin");
+	g_pendingHtml.clear();
+	g_pendingBody.clear();
+	g_webviewReady = false;
+	g_webviewCreating = false;
+	g_virtualHostMapped = false;
+	g_shellReady = false;
+	if (g_webview) {
+		if (g_tokenNavigationStarting.value) {
+			g_webview->remove_NavigationStarting(g_tokenNavigationStarting);
+			g_tokenNavigationStarting = {};
+		}
+		if (g_tokenNavigationCompleted.value) {
+			g_webview->remove_NavigationCompleted(g_tokenNavigationCompleted);
+			g_tokenNavigationCompleted = {};
+		}
+		if (g_tokenNewWindowRequested.value) {
+			g_webview->remove_NewWindowRequested(g_tokenNewWindowRequested);
+			g_tokenNewWindowRequested = {};
+		}
+		if (g_tokenContextMenuRequested.value) {
+			ComPtr<ICoreWebView2_11> webview11;
+			if (SUCCEEDED(g_webview.As(&webview11)) && webview11) {
+				webview11->remove_ContextMenuRequested(g_tokenContextMenuRequested);
+			}
+			g_tokenContextMenuRequested = {};
+		}
+	}
+	if (g_controller) {
+		if (g_tokenAcceleratorKeyPressed.value) {
+			g_controller->remove_AcceleratorKeyPressed(g_tokenAcceleratorKeyPressed);
+			g_tokenAcceleratorKeyPressed = {};
+		}
+		g_controller->Close();
+	}
+	g_webview.Reset();
+	g_controller.Reset();
+	g_env.Reset();
+	PreviewMode_Log(L"DestroyBrowser end");
+}
+
+bool EnsureBrowser() noexcept {
+	if (g_webviewReady && g_webview != nullptr) {
+		return true;
+	}
+	if (g_webviewFailed) {
+		return false;
+	}
+	if (g_hwndContainer == nullptr) {
+		return false;
+	}
+	RECT rc;
+	GetClientRect(g_hwndContainer, &rc);
+	if (rc.right <= 0 || rc.bottom <= 0) {
+		PreviewMode_Log(L"EnsureBrowser: container size zero");
+		return false;
+	}
+
+	if (!g_webviewCreating) {
+		g_webviewCreating = true;
+		CreateDirectoryW(g_webviewUserDataDir, nullptr);
+		PreviewMode_Log(L"EnsureBrowser: CreateCoreWebView2Environment userData=%s", g_webviewUserDataDir);
+		const HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
+			nullptr, g_webviewUserDataDir, nullptr,
+			Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+				[](HRESULT result, ICoreWebView2Environment *env) -> HRESULT {
+					OnEnvironmentCreated(result, env);
+					return S_OK;
+				}).Get());
+		if (FAILED(hr)) {
+			g_webviewCreating = false;
+			g_webviewFailed = true;
+			PreviewMode_Log(L"CreateCoreWebView2EnvironmentWithOptions hr=0x%08lX", hr);
+			ShowWebViewUnavailableHtml(L"CreateCoreWebView2EnvironmentWithOptions failed.");
+			return false;
+		}
+	}
+
+	PumpMessagesForWebViewInit(PREVIEW_INIT_TIMEOUT_MS);
+	return g_webviewReady && g_webview != nullptr;
+}
+
+void LoadHtmlIntoBrowser(LPCWSTR bodyHtml) noexcept {
+	if (bodyHtml == nullptr) {
+		return;
+	}
+	const bool dark = (np2StyleTheme == StyleTheme_Dark);
+	const bool isFullDocument = (_wcsnicmp(bodyHtml, L"<html", 5) == 0 || _wcsnicmp(bodyHtml, L"<!DOC", 5) == 0);
+
+	if (!EnsureBrowser()) {
+		PreviewMode_Log(L"LoadHtmlIntoBrowser: EnsureBrowser failed");
+		return;
+	}
+
+	// Rare path: raw HTML/XML documents that already include a full page.
+	if (isFullDocument) {
+		g_shellReady = false;
+		g_pendingBody.clear();
+		g_pendingHtml = bodyHtml;
+		NavigatePendingHtml();
+		return;
+	}
+
+	if (!g_shellReady || g_shellDark != dark) {
+		g_shellDark = dark;
+		g_pendingBody = bodyHtml;
+		WCHAR shell[16384];
+		BuildPreviewShellDocument(shell, NP2_COUNTOF(shell), dark);
+		g_pendingHtml = shell;
+		NavigatePendingHtml();
+		return;
+	}
+
+	PostBodyHtml(bodyHtml);
+}
+
+#else // !NP2_USE_WEBVIEW2
+
+void ApplyPreviewZoom() noexcept {}
+void DestroyBrowser() noexcept {}
+bool EnsureBrowser() noexcept { return false; }
+void LoadHtmlIntoBrowser(LPCWSTR) noexcept {}
+void ResizeWebViewToContainer() noexcept {}
+
+#endif
 
 void UpdatePreviewContent() noexcept {
 	PreviewMode_Log(L"UpdatePreviewContent enter active=%d inUpdate=%d dirty=%d lex=%d",
@@ -1533,15 +1184,7 @@ void UpdatePreviewContent() noexcept {
 	}
 	g_inUpdate = true;
 	const unsigned serialAtStart = g_dirtySerial;
-	const EditFocusState editFocus = SaveEditFocusState();
-	if (!EnsureBrowser()) {
-		PreviewMode_Log(L"UpdatePreviewContent: EnsureBrowser failed");
-		RestoreEditFocusState(editFocus);
-		g_inUpdate = false;
-		g_dirty = true;
-		SetTimer(g_hwndMain, ID_PREVIEW_TIMER, PREVIEW_LAYOUT_RETRY_MS, nullptr);
-		return;
-	}
+	const bool keepPreviewFocus = IsPreviewFocus();
 
 	const Sci_Position length = min<Sci_Position>(SciCall_GetLength(), PREVIEW_MAX_TEXT_BYTES);
 	PreviewMode_Log(L"UpdatePreviewContent: doc bytes=%lld", static_cast<long long>(length));
@@ -1550,193 +1193,42 @@ void UpdatePreviewContent() noexcept {
 	GetDocumentUtf8(text, textCapacity);
 	const size_t textLen = strlen(text);
 
-	const size_t htmlCch = textCapacity * 8 + 4096;
+	const size_t htmlCch = textCapacity * 8 + 8192;
 	LPWSTR html = static_cast<LPWSTR>(NP2HeapAlloc(htmlCch * sizeof(WCHAR)));
 
 	switch (pLexCurrent->rid) {
 	case NP2LEX_MARKDOWN:
-		PreviewMode_Log(L"UpdatePreviewContent: MarkdownToHtml");
 		MarkdownToHtml(text, textLen, html, htmlCch);
 		break;
 	case NP2LEX_CSV:
-		PreviewMode_Log(L"UpdatePreviewContent: CsvToHtml");
 		CsvToHtml(text, textLen, html, htmlCch);
 		break;
+	case NP2LEX_HTML:
+	case NP2LEX_XML:
 	default:
-		PreviewMode_Log(L"UpdatePreviewContent: WrapDocumentHtml");
 		WrapDocumentHtml(text, textLen, html, htmlCch);
 		break;
 	}
 
-	const bool loaded = LoadHtmlIntoBrowser(html);
-	PreviewMode_Log(L"UpdatePreviewContent: LoadHtmlIntoBrowser=%s", loaded ? L"ok" : L"fail");
+	LoadHtmlIntoBrowser(html);
 
 	NP2HeapFree(html);
 	NP2HeapFree(text);
-	RestoreEditFocusState(editFocus);
-	g_inUpdate = false;
-	if (loaded && serialAtStart == g_dirtySerial) {
+
+	if (g_dirtySerial == serialAtStart) {
 		g_dirty = false;
-	} else {
-		SchedulePreviewUpdate();
 	}
-	PreviewMode_Log(L"UpdatePreviewContent leave dirty=%d serial=%u/%u loaded=%d",
-		g_dirty, serialAtStart, g_dirtySerial, loaded);
-}
+	g_inUpdate = false;
 
-void ShowContainer(bool show) noexcept {
-	if (g_hwndContainer != nullptr) {
-		ShowWindow(g_hwndContainer, show ? SW_SHOW : SW_HIDE);
-	}
-}
-
-void ShowSplitter(bool show) noexcept {
-	if (g_hwndSplitter != nullptr) {
-		ShowWindow(g_hwndSplitter, show ? SW_SHOW : SW_HIDE);
-	}
-}
-
-void ApplyPreviewZoom() noexcept {
-	if (g_pBrowser == nullptr) {
-		return;
-	}
-	IDispatch *pDocDisp = nullptr;
-	if (FAILED(g_pBrowser->get_Document(&pDocDisp)) || pDocDisp == nullptr) {
-		return;
-	}
-	IHTMLDocument2 *pHTML = nullptr;
-	const HRESULT hrQI = pDocDisp->QueryInterface(IID_IHTMLDocument2, reinterpret_cast<void **>(&pHTML));
-	pDocDisp->Release();
-	if (FAILED(hrQI) || pHTML == nullptr) {
-		return;
-	}
-	IHTMLElement *pBody = nullptr;
-	if (SUCCEEDED(pHTML->get_body(&pBody)) && pBody != nullptr) {
-		IHTMLStyle *pStyle = nullptr;
-		if (SUCCEEDED(pBody->get_style(&pStyle)) && pStyle != nullptr) {
-			WCHAR zoomText[16];
-			swprintf(zoomText, NP2_COUNTOF(zoomText), L"%d%%", g_previewZoomPercent);
-			VARIANT v;
-			VariantInit(&v);
-			v.vt = VT_BSTR;
-			v.bstrVal = SysAllocString(zoomText);
-			if (v.bstrVal != nullptr) {
-				pStyle->put_fontSize(v);
-				SysFreeString(v.bstrVal);
-			}
-			pStyle->Release();
+	if (keepPreviewFocus && g_hwndContainer) {
+		SetFocus(g_hwndContainer);
+#if defined(NP2_USE_WEBVIEW2)
+		if (g_controller) {
+			g_controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
 		}
-		pBody->Release();
+#endif
 	}
-	pHTML->Release();
-}
-
-LRESULT CALLBACK PreviewWheelSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData) noexcept {
-	UNREFERENCED_PARAMETER(hwnd);
-	UNREFERENCED_PARAMETER(uIdSubclass);
-	UNREFERENCED_PARAMETER(dwRefData);
-	if (msg == WM_MOUSEWHEEL && g_active && (GetKeyState(VK_CONTROL) & 0x8000)) {
-		const short delta = GET_WHEEL_DELTA_WPARAM(wParam);
-		if (delta != 0) {
-			const int step = (delta > 0) ? PREVIEW_ZOOM_STEP : -PREVIEW_ZOOM_STEP;
-			g_previewZoomPercent = clamp(g_previewZoomPercent + step, PREVIEW_ZOOM_MIN, PREVIEW_ZOOM_MAX);
-			ApplyPreviewZoom();
-			return 0;
-		}
-	}
-	return DefSubclassProc(hwnd, msg, wParam, lParam);
-}
-
-void AttachPreviewWheelHandler(HWND hwnd) noexcept {
-	if (hwnd != nullptr) {
-		SetWindowSubclass(hwnd, PreviewWheelSubclassProc, PREVIEW_WHEEL_SUBCLASS_ID, 0);
-	}
-}
-
-void StripPreviewBorderStyles(HWND hwnd) noexcept {
-	if (hwnd == nullptr) {
-		return;
-	}
-	LONG style = GetWindowLong(hwnd, GWL_STYLE);
-	style &= ~(WS_BORDER | WS_DLGFRAME);
-	SetWindowLong(hwnd, GWL_STYLE, style);
-	LONG exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
-	exStyle &= ~(WS_EX_CLIENTEDGE | WS_EX_STATICEDGE | WS_EX_WINDOWEDGE | WS_EX_DLGMODALFRAME);
-	SetWindowLong(hwnd, GWL_EXSTYLE, exStyle);
-	SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
-		SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-}
-
-void UpdatePreviewContainerBackground() noexcept {
-	if (g_hwndContainer == nullptr) {
-		return;
-	}
-	const bool dark = IsPreviewDarkChrome() && DarkMode_ShouldApply(true);
-	if (g_previewContainerBrush != nullptr) {
-		DeleteObject(g_previewContainerBrush);
-		g_previewContainerBrush = nullptr;
-	}
-	g_previewContainerBrush = CreateSolidBrush(dark ? RGB(0x0D, 0x11, 0x17) : RGB(0xFF, 0xFF, 0xFF));
-	if (g_previewContainerBrush != nullptr) {
-		SetClassLongPtr(g_hwndContainer, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(g_previewContainerBrush));
-	}
-	DarkMode_AllowWindow(g_hwndContainer, dark);
-	InvalidateRect(g_hwndContainer, nullptr, TRUE);
-}
-
-void ApplyPreviewBrowserChrome() noexcept {
-	if (g_hwndContainer == nullptr) {
-		return;
-	}
-	const bool apply = IsPreviewDarkChrome() && DarkMode_ShouldApply(true);
-	UpdatePreviewContainerBackground();
-
-	auto styleBrowserHwnd = [&](HWND hwnd) noexcept {
-		if (hwnd == nullptr) {
-			return;
-		}
-		StripPreviewBorderStyles(hwnd);
-		DarkMode_AllowWindow(hwnd, apply);
-		SetWindowTheme(hwnd, apply ? L"DarkMode_Explorer" : L"Explorer", nullptr);
-		if (apply) {
-			if (InitializeFlatSB(hwnd)) {
-				const COLORREF track = RGB(0x0D, 0x11, 0x17);
-				const COLORREF thumb = RGB(0x3E, 0x3E, 0x42);
-				FlatSB_SetScrollProp(hwnd, WSB_PROP_VBKGCOLOR, track, TRUE);
-				FlatSB_SetScrollProp(hwnd, WSB_PROP_HBKGCOLOR, track, TRUE);
-				FlatSB_SetScrollProp(hwnd, WSB_PROP_VCOLOR, thumb, TRUE);
-				FlatSB_SetScrollProp(hwnd, WSB_PROP_HCOLOR, thumb, TRUE);
-			}
-		} else {
-			UninitializeFlatSB(hwnd);
-		}
-		InvalidateRect(hwnd, nullptr, TRUE);
-	};
-
-	HWND hwndDoc = FindWindowExW(g_hwndContainer, nullptr, L"Internet Explorer_Server", nullptr);
-	styleBrowserHwnd(hwndDoc);
-	StripPreviewBorderStyles(g_hwndContainer);
-	AttachPreviewWheelHandler(g_hwndContainer);
-	AttachPreviewWheelHandler(hwndDoc);
-
-	HWND hwndScroll = nullptr;
-	while ((hwndScroll = FindWindowExW(g_hwndContainer, hwndScroll, L"ScrollBar", nullptr)) != nullptr) {
-		styleBrowserHwnd(hwndScroll);
-	}
-	if (hwndDoc != nullptr) {
-		hwndScroll = nullptr;
-		while ((hwndScroll = FindWindowExW(hwndDoc, hwndScroll, L"ScrollBar", nullptr)) != nullptr) {
-			styleBrowserHwnd(hwndScroll);
-		}
-	}
-}
-
-void RequestRelayout() noexcept {
-	if (g_hwndMain != nullptr) {
-		RECT rc;
-		GetClientRect(g_hwndMain, &rc);
-		PostMessage(g_hwndMain, APPM_PREVIEW_RELAYOUT, 0, MAKELPARAM(rc.right, rc.bottom));
-	}
+	PreviewMode_Log(L"UpdatePreviewContent leave dirty=%d", g_dirty);
 }
 
 void ComputePaneHeights(int cy, int &editCy, int &previewCy) noexcept {
@@ -1779,6 +1271,14 @@ bool HandlePreviewMouseWheel(WPARAM wParam, LPARAM lParam) noexcept {
 }
 
 void ApplyPaneLayout(int x, int y, int cx, int cy, int *pEditHeight) noexcept {
+	if (cx <= 0 || cy <= 0) {
+		PreviewMode_Log(L"ApplyPaneLayout ignored invalid size %dx%d", cx, cy);
+		if (pEditHeight) {
+			*pEditHeight = max(0, cy);
+		}
+		return;
+	}
+
 	g_lastLayoutX = x;
 	g_lastLayoutY = y;
 	g_lastLayoutCx = cx;
@@ -1800,10 +1300,7 @@ void ApplyPaneLayout(int x, int y, int cx, int cy, int *pEditHeight) noexcept {
 		ShowSplitter(true);
 	}
 	SetWindowPos(g_hwndContainer, HWND_TOP, x, previewY, cx, previewCy, SWP_NOACTIVATE);
-	if (g_pInPlaceObject && previewCy > 0 && cx > 0) {
-		RECT rc = { 0, 0, cx, previewCy };
-		g_pInPlaceObject->SetObjectRects(&rc, &rc);
-	}
+	ResizeWebViewToContainer();
 	ShowContainer(true);
 }
 
@@ -1959,6 +1456,7 @@ void PreviewMode_Init(HWND hwndMain) noexcept {
 	PreviewMode_InitLog();
 	g_hwndMain = hwndMain;
 	EnsureSplitterClass();
+	UpdatePreviewContainerBackground();
 	g_hwndContainer = CreateWindowExW(0, WC_STATIC, L"", WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
 		0, 0, 0, 0, hwndMain, reinterpret_cast<HMENU>(static_cast<UINT_PTR>(0xFB10)), GetModuleHandle(nullptr), nullptr);
 	g_hwndSplitter = CreateWindowExW(0, PREVIEW_SPLITTER_CLASS, L"", WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
@@ -2139,8 +1637,11 @@ void PreviewMode_OnTimer() noexcept {
 	if (!g_dirty || !g_active) {
 		return;
 	}
-	PreviewMode_Log(L"OnTimer schedule update");
-	SchedulePreviewUpdate();
+	if (!g_updatePosted) {
+		g_updatePosted = true;
+		PreviewMode_Log(L"OnTimer PostMessage APPM_PREVIEW_UPDATE");
+		PostMessage(g_hwndMain, APPM_PREVIEW_UPDATE, 0, 0);
+	}
 }
 
 void PreviewMode_OnPostedUpdate() noexcept {
@@ -2171,8 +1672,26 @@ void PreviewMode_OnThemeChanged() noexcept {
 	if (g_hwndSplitter != nullptr) {
 		InvalidateRect(g_hwndSplitter, nullptr, TRUE);
 	}
-	ApplyPreviewBrowserChrome();
+	UpdatePreviewContainerBackground();
+#if defined(NP2_USE_WEBVIEW2)
+	g_shellReady = false;
+#endif
 	if (g_active) {
 		PreviewMode_RequestUpdate();
 	}
+}
+
+bool PreviewMode_ShouldSkipMainAccelerator(const MSG *msg) noexcept {
+	if (msg == nullptr || !g_active || !IsPreviewFocus()) {
+		return false;
+	}
+	if (msg->message != WM_KEYDOWN && msg->message != WM_SYSKEYDOWN) {
+		return false;
+	}
+	const bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+	if (!ctrl) {
+		return false;
+	}
+	const WPARAM vk = msg->wParam;
+	return vk == 'C' || vk == 'A' || vk == 'X' || vk == VK_INSERT;
 }

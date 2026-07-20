@@ -33,4 +33,5 @@ compile_commands.json
 *.plist
 *.orig
 *.log
+WebView2Data/
 tools/Toolbar*.bmp

@@ -15,17 +15,18 @@ See also: [Preview Mode](Preview-Mode.md), [Build](wiki/Build-Notepad.md), [CI/C
 
 ## Preview Mode
 
-Split editor view: source on top, live preview on bottom (Trident / MSHTML).
+Split editor view: source on top, live preview on bottom (**WebView2**).
 
 - **Supported schemes:** Markdown, HTML, XML, CSV
-- **Markdown:** rendered with [md4c](https://github.com/mity/md4c) (GFM dialect), GitHub-like CSS (light / dark)
+- **Markdown:** rendered with [md4c](https://github.com/mity/md4c) (GFM dialect), GitHub-like CSS (light / dark); fenced **Mermaid** diagrams via offline `preview/mermaid.min.js`
 - **HTML / XML:** escaped document preview
 - **CSV:** HTML table preview
 - **UI:** draggable splitter, double-click splitter or menu to maximize preview
-- **Zoom:** **Ctrl + mouse wheel** over the preview pane (50–250%, step 10%). On-screen zoom buttons were removed.
-- **Context menu:** Copy, Select All, Open/Copy Link, Copy Image (or image URL)
-- **Selection:** text in preview is selectable; themed `::selection` colors
-- **Dark theme:** preview scrollbars and browser chrome styled when dark shell theme is active
+- **Zoom:** **Ctrl + mouse wheel** over the preview pane (50–250%, step 10%)
+- **Links:** `http`/`https` open in the **system browser** (preview never navigates away)
+- **Clipboard:** Ctrl+C / Ctrl+A work on preview selection (main accelerators skipped while preview has focus)
+- **Context menu:** Copy, Select All, Open Link, Copy Link
+- **Dark theme:** preview CSS follows application dark style theme
 
 **Menu:** View → Preview Mode, Maximize Preview, Auto Enable Preview Mode  
 **Toolbar:** Preview Mode button — second from the right, before Close (custom split-pane icon)
@@ -42,7 +43,9 @@ Split editor view: source on top, live preview on bottom (Trident / MSHTML).
 
 **Debug log:** `NotepadPreview.log` next to the executable. Disable: set environment variable `NP2_PREVIEW_LOG=0`.
 
-**Sources:** `src/PreviewMode.cpp`, `src/PreviewMode.h`, `src/md4c/`
+**Sources:** `src/PreviewMode.cpp`, `src/PreviewMode.h`, `src/md4c/`, `third_party/webview2/`, `preview/`
+
+**Raw save:** no Markdown auto-format on save; only optional global EOL / trailing-blank fixes apply.
 
 ---
 
@@ -75,7 +78,7 @@ To reset toolbar layout after an upgrade, remove `ToolbarButtons` from `Notepad.
 GitHub Actions: `.github/workflows/main.yml` — single job **MSVC x64** on `windows-2022`, artifact **`Notepad_x64`** (`Notepad_i18n_x64_*.zip`).  
 AppVeyor: `appveyor.yml` — same x64 build (optional mirror).
 
-**CI must include** (commit before push): `PreviewMode.*`, `DarkMode.*`, `src/md4c/`, `doc/Notepad DarkTheme.ini`, updated `res/Toolbar*.bmp`, `tools/images/Preview.svg`.
+**CI must include** (commit before push): `PreviewMode.*`, `DarkMode.*`, `src/md4c/`, `third_party/webview2/`, `preview/mermaid.min.js`, `doc/Notepad DarkTheme.ini`, updated `res/Toolbar*.bmp`, `tools/images/Preview.svg`.
 
 ---
 

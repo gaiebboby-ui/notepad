@@ -151,6 +151,8 @@ IF NOT EXIST "%TEMP_ZIP_DIR%" MD "%TEMP_ZIP_DIR%"
 FOR %%A IN ( "..\License.txt"  "%1\Notepad.exe"  "%1\matepath.exe" "..\doc\Notepad.ini" "..\matepath\doc\matepath.ini"
 ) DO COPY /Y /B /V "%%A" "%TEMP_ZIP_DIR%\"
 COPY /Y /B /V "..\doc\Notepad DarkTheme.ini" "%TEMP_ZIP_DIR%\"
+IF EXIST "%1\preview" XCOPY /Q /S /Y "%1\preview" "%TEMP_ZIP_DIR%\preview\"
+IF EXIST "..\preview" IF NOT EXIST "%TEMP_ZIP_DIR%\preview" XCOPY /Q /S /Y "..\preview" "%TEMP_ZIP_DIR%\preview\"
 IF "%WITH_LOCALE%" == "1" (
   XCOPY /Q /S /Y "%1\locale" "%TEMP_ZIP_DIR%\locale\"
 )

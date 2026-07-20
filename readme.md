@@ -20,7 +20,7 @@ Latest **x64** builds for Windows 10/11 (MSVC Release, all locales) are publishe
 
 ## Fork highlights (this repository)
 
-* **[Preview Mode](doc/Preview-Mode.md)** — split view with live preview for Markdown (GFM / md4c), HTML, XML, and CSV; Ctrl+wheel zoom; dark-theme preview chrome
+* **[Preview Mode](doc/Preview-Mode.md)** — split view with live preview for Markdown (GFM / md4c + Mermaid), HTML, XML, and CSV via WebView2; Ctrl+wheel zoom; http(s) links open in the system browser
 * **Dark theme** — `Notepad DarkTheme.ini` and shell dark mode (`DarkMode` module)
 * **Toolbar** — larger default buttons (+20% scale); Preview Mode button with dedicated icon (before Close)
 * **Build / CI** — documented in [doc/wiki/](doc/wiki/); release zips named `Notepad_*.zip`
