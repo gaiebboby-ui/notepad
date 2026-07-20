@@ -6,6 +6,7 @@
 #include <uxtheme.h>
 #include <dwmapi.h>
 #include <shlwapi.h>
+#include <shellapi.h>
 #include <cstdio>
 #include <cstdarg>
 #include "DarkMode.h"
@@ -728,9 +729,13 @@ void DarkMode_InitTreeView(HWND hwndTV) noexcept {
 	SetWindowTheme(hwndTV, L"Explorer", nullptr);
 }
 
-void DarkMode_InitFileListView(HWND hwndLV) noexcept {
+void DarkMode_InitFileListView(HWND hwndLV, DWORD exStyle) noexcept {
 	InitWindowCommon(hwndLV);
-	ListView_SetExtendedListViewStyle(hwndLV, LVS_EX_DOUBLEBUFFER | LVS_EX_LABELTIP);
+	exStyle |= LVS_EX_DOUBLEBUFFER | LVS_EX_LABELTIP;
+	ListView_SetExtendedListViewStyle(hwndLV, exStyle);
+	if (exStyle & LVS_EX_FULLROWSELECT) {
+		SetWindowTheme(hwndLV, L"Explorer", nullptr);
+	}
 
 	LVCOLUMN lvc{};
 	lvc.mask = LVCF_FMT | LVCF_TEXT;

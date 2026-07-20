@@ -35,7 +35,6 @@
 #include "Dlapi.h"
 #include "Dialogs.h"
 #include "matepath.h"
-#include "../../src/DarkMode.h"
 #include "resource.h"
 
 /******************************************************************************
@@ -1132,9 +1131,9 @@ void Matepath_ApplyShellDarkMode(HWND hwnd) noexcept {
 	DarkMode_ApplyToCommCtrlBars(hwndReBar, hwndToolbar, hwndStatus, dark);
 	if (hwndDirList != nullptr) {
 		if (apply && bFullRowSelect) {
-			SetExplorerTheme(hwndDirList);
+			SetWindowTheme(hwndDirList, L"DarkMode_Explorer", nullptr);
 		} else if (apply) {
-			SetListViewTheme(hwndDirList);
+			SetWindowTheme(hwndDirList, L"Listview", nullptr);
 		}
 		ListView_SetBkColor(hwndDirList, DarkMode_GetShellBackgroundColor(apply));
 		if (HasFilter()) {

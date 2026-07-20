@@ -378,7 +378,7 @@ void Registry_UpdateDefaultProgramsRegistration(bool enable, LPCWSTR friendlyNam
 			RegDeleteValue(hKey, NP2RegSubKey_RegisteredAppValue);
 			RegCloseKey(hKey);
 		}
-		Registry_DeleteTree(HKEY_LOCAL_MACHINE, NP2RegSubKey_Capabilities);
+		RegDeleteTree(HKEY_LOCAL_MACHINE, NP2RegSubKey_Capabilities);
 	}
 }
 
@@ -396,7 +396,7 @@ void Registry_UpdateProgIdRegistration(bool enable, LPCWSTR friendlyName, LPCWST
 			RegCloseKey(hSubKey);
 		}
 	} else {
-		Registry_DeleteTree(HKEY_CLASSES_ROOT, NP2RegSubKey_ProgId);
+		RegDeleteTree(HKEY_CLASSES_ROOT, NP2RegSubKey_ProgId);
 	}
 }
 

@@ -509,8 +509,12 @@ bool BitmapAlphaBlend(HBITMAP hbmp, COLORREF crDest, BYTE alpha) noexcept;
 bool BitmapGrayScale(HBITMAP hbmp) noexcept;
 
 void CenterDlgInParentEx(HWND hDlg, HWND hParent) noexcept;
+void SetToRightBottomEx(HWND hDlg, HWND hParent) noexcept;
 inline void CenterDlgInParent(HWND hDlg) noexcept {
 	CenterDlgInParentEx(hDlg, GetParent(hDlg));
+}
+inline void SetToRightBottom(HWND hDlg) noexcept {
+	SetToRightBottomEx(hDlg, GetParent(hDlg));
 }
 void SnapToDefaultButton(HWND hwndBox) noexcept;
 

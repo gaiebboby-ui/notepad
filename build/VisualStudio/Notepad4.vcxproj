@@ -623,7 +623,6 @@ if exist "$(SolutionDir)..\doc\Notepad DarkTheme.ini" copy /Y "$(SolutionDir)..\
       <CallingConvention>Cdecl</CallingConvention>
     </ClCompile>
     <ClCompile Include="..\..\src\PreviewMode.cpp" />
-    <ClCompile Include="..\..\src\DarkMode.cpp" />
     <ClCompile Include="..\..\src\Dlapi.cpp" />
     <ClCompile Include="..\..\src\Edit.cpp" />
     <ClCompile Include="..\..\src\EditAutoC.cpp" />
@@ -792,7 +791,6 @@ if exist "$(SolutionDir)..\doc\Notepad DarkTheme.ini" copy /Y "$(SolutionDir)..\
     <ClInclude Include="..\..\src\md4c\md4c-html.h" />
     <ClInclude Include="..\..\src\md4c\entity.h" />
     <ClInclude Include="..\..\src\PreviewMode.h" />
-    <ClInclude Include="..\..\src\DarkMode.h" />
     <ClInclude Include="..\..\src\Dlapi.h" />
     <ClInclude Include="..\..\src\Edit.h" />
     <ClInclude Include="..\..\src\EditLexer.h" />

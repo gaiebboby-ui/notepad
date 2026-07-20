@@ -462,7 +462,6 @@
     </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\matepath\src\DarkMode.cpp" />
     <ClCompile Include="..\..\matepath\src\Dialogs.cpp" />
     <ClCompile Include="..\..\src\DarkMode.cpp" />
     <ClCompile Include="..\..\matepath\src\Dlapi.cpp" />
