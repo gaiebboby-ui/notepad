@@ -437,18 +437,23 @@ void ClosePreviewShell(LPWSTR &dst, size_t &remaining, bool dark, bool withMerma
 
 void BuildPreviewShellDocument(LPWSTR html, size_t htmlCch, bool dark) noexcept {
 	static const WCHAR shellHead[] =
-		L"<!DOCTYPE html><html><head><meta charset=\"utf-8\"><base target=\"_self\">"
-		L"<link rel=\"stylesheet\" href=\"https://np2.preview/katex.min.css?v=2\">"
-		L"<link rel=\"stylesheet\" href=\"https://np2.preview/github.min.css?v=2\" id=\"np2-hljs-light\">"
-		L"<link rel=\"stylesheet\" href=\"https://np2.preview/github-dark.min.css?v=2\" id=\"np2-hljs-dark\" disabled>"
-		L"<link rel=\"stylesheet\" href=\"https://np2.preview/mdpp.css?v=2\">"
+		L"<!DOCTYPE html><html class=\"";
+	static const WCHAR shellAfterHtmlClass[] =
+		L"\"><head><meta charset=\"utf-8\"><base target=\"_self\">"
+		L"<style>html,body{min-height:100%;background:";
+	static const WCHAR shellAfterInlineBg[] =
+		L";}</style>"
+		L"<link rel=\"stylesheet\" href=\"https://np2.preview/katex.min.css?v=3\">"
+		L"<link rel=\"stylesheet\" href=\"https://np2.preview/github.min.css?v=3\" id=\"np2-hljs-light\">"
+		L"<link rel=\"stylesheet\" href=\"https://np2.preview/github-dark.min.css?v=3\" id=\"np2-hljs-dark\" disabled>"
+		L"<link rel=\"stylesheet\" href=\"https://np2.preview/mdpp.css?v=3\">"
 		L"</head><body class=\"";
 	static const WCHAR shellMid[] =
 		L"\"><div id=\"np2-content\"></div>"
-		L"<script src=\"https://np2.preview/katex.min.js?v=2\"></script>"
-		L"<script src=\"https://np2.preview/highlight.min.js?v=2\"></script>"
-		L"<script src=\"https://np2.preview/mermaid.min.js?v=2\"></script>"
-		L"<script src=\"https://np2.preview/mdpp.js?v=2\" data-dark=\"";
+		L"<script src=\"https://np2.preview/katex.min.js?v=3\"></script>"
+		L"<script src=\"https://np2.preview/highlight.min.js?v=3\"></script>"
+		L"<script src=\"https://np2.preview/mermaid.min.js?v=3\"></script>"
+		L"<script src=\"https://np2.preview/mdpp.js?v=3\" data-dark=\"";
 	static const WCHAR shellTail[] =
 		L"\"></script></body></html>";
 
@@ -461,6 +466,10 @@ void BuildPreviewShellDocument(LPWSTR html, size_t htmlCch, bool dark) noexcept 
 		}
 	};
 	append(shellHead);
+	append(dark ? L"np2-dark" : L"");
+	append(shellAfterHtmlClass);
+	append(dark ? L"#0d1117" : L"#fff");
+	append(shellAfterInlineBg);
 	append(dark ? L"np2-dark" : L"");
 	append(shellMid);
 	append(dark ? L"1" : L"0");
@@ -1743,6 +1752,9 @@ void EnsurePreviewContainerClass() noexcept {
 void PreviewMode_Init(HWND hwndMain) noexcept {
 	PreviewMode_InitLog();
 	g_hwndMain = hwndMain;
+#if defined(NP2_USE_WEBVIEW2)
+	SetPreviewWebViewEnvBackground();
+#endif
 	EnsureSplitterClass();
 	EnsurePreviewContainerClass();
 	UpdatePreviewContainerBackground();

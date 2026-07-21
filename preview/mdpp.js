@@ -6,6 +6,7 @@
 
 	function setDarkMode(isDark) {
 		dark = !!isDark;
+		document.documentElement.classList.toggle('np2-dark', dark);
 		document.body.classList.toggle('np2-dark', dark);
 		var hljsLight = document.getElementById('np2-hljs-light');
 		var hljsDark = document.getElementById('np2-hljs-dark');

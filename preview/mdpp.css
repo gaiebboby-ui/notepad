@@ -1,4 +1,4 @@
-/* MD++ preview styles (light default, dark via body.np2-dark) */
+/* MD++ preview styles (light default, dark via html/body.np2-dark) */
 :root {
 	--np2-bg: #fff;
 	--np2-fg: #24292f;
@@ -16,6 +16,7 @@
 	--np2-admon-caution: #cf222e;
 }
 
+html.np2-dark,
 body.np2-dark {
 	--np2-bg: #0d1117;
 	--np2-fg: #c9d1d9;
@@ -34,6 +35,7 @@ body.np2-dark {
 }
 
 html, body {
+	min-height: 100%;
 	background: var(--np2-bg);
 }
 
