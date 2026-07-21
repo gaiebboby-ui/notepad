@@ -775,9 +775,6 @@ void ResizeWebViewToContainer() noexcept {
 	if (g_controller == nullptr || g_hwndContainer == nullptr) {
 		return;
 	}
-	if (g_splitterDragging) {
-		return;
-	}
 	ApplyPreviewWebViewBackground();
 	RECT rc {};
 	GetClientRect(g_hwndContainer, &rc);
@@ -970,10 +967,8 @@ HRESULT HandleNavigationCompleted(ICoreWebView2 * /*sender*/, ICoreWebView2Navig
 	PreviewMode_Log(L"NavigationCompleted success=%d", g_shellReady ? 1 : 0);
 	if (g_shellReady) {
 		FlushPendingBody();
-		if (!g_splitterDragging) {
-			ResizeWebViewToContainer();
-			SetPreviewWebViewVisible(true);
-		}
+		ResizeWebViewToContainer();
+		SetPreviewWebViewVisible(true);
 	}
 	return S_OK;
 }
@@ -1388,16 +1383,7 @@ void ApplyPaneLayout(int x, int y, int cx, int cy, int *pEditHeight) noexcept {
 	if (g_hwndContainer) {
 		InvalidateRect(g_hwndContainer, nullptr, TRUE);
 	}
-#if defined(NP2_USE_WEBVIEW2)
-	if (g_splitterDragging) {
-		SetPreviewWebViewVisible(false);
-	} else {
-		ResizeWebViewToContainer();
-		SetPreviewWebViewVisible(true);
-	}
-#else
 	ResizeWebViewToContainer();
-#endif
 	ShowContainer(true);
 }
 
@@ -1480,13 +1466,6 @@ LRESULT CALLBACK PreviewSplitterProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 		g_splitterDragging = true;
 		g_splitterDragStartY = GET_Y_LPARAM(lParam);
 		g_splitterDragStartPercent = g_previewPercent;
-#if defined(NP2_USE_WEBVIEW2)
-		SetPreviewWebViewVisible(false);
-		if (g_hwndContainer) {
-			InvalidateRect(g_hwndContainer, nullptr, TRUE);
-			UpdateWindow(g_hwndContainer);
-		}
-#endif
 		return 0;
 
 	case WM_MOUSEMOVE:
@@ -1812,9 +1791,6 @@ void PreviewMode_OnThemeChanged() noexcept {
 	UpdatePreviewContainerBackground();
 #if defined(NP2_USE_WEBVIEW2)
 	ApplyPreviewWebViewBackground();
-	if (g_splitterDragging) {
-		SetPreviewWebViewVisible(false);
-	}
 	g_shellReady = false;
 #endif
 	if (g_active) {
