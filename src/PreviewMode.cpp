@@ -75,6 +75,7 @@ extern HWND hwndEdit;
 #define ID_PREVIEW_CTX_COPY_LINK	0xFB33
 
 constexpr WCHAR PREVIEW_SPLITTER_CLASS[] = L"NP2PreviewSplitter";
+constexpr WCHAR PREVIEW_CONTAINER_CLASS[] = L"NP2PreviewContainer";
 constexpr WCHAR PREVIEW_VIRTUAL_HOST[] = L"np2.preview";
 
 namespace {
@@ -105,6 +106,7 @@ int g_lastLayoutCy;
 int g_previewZoomPercent = PREVIEW_ZOOM_DEFAULT;
 
 bool g_splitterClassRegistered;
+bool g_containerClassRegistered;
 HBRUSH g_previewContainerBrush;
 
 WCHAR g_previewLogPath[MAX_PATH];
@@ -133,6 +135,7 @@ std::wstring g_contextLinkUrl;
 bool g_contextHasSelection;
 bool g_shellReady;
 bool g_shellDark;
+bool g_webviewBgEnvSet;
 #endif
 
 void PreviewMode_LogV(LPCWSTR format, va_list args) noexcept {
@@ -237,17 +240,51 @@ void SchedulePreviewUpdate() noexcept {
 	SetTimer(g_hwndMain, ID_PREVIEW_TIMER, delay, nullptr);
 }
 
+bool IsPreviewDarkTheme() noexcept {
+	return np2StyleTheme == StyleTheme_Dark;
+}
+
+COLORREF GetPreviewBackgroundColor() noexcept {
+	return IsPreviewDarkTheme()
+		? RGB(0x0D, 0x11, 0x17)
+		: RGB(0xFF, 0xFF, 0xFF);
+}
+
+#if defined(NP2_USE_WEBVIEW2)
+COREWEBVIEW2_COLOR MakePreviewWebViewColor() noexcept {
+	COREWEBVIEW2_COLOR color {};
+	color.A = 255;
+	if (IsPreviewDarkTheme()) {
+		color.R = 0x0D;
+		color.G = 0x11;
+		color.B = 0x17;
+	} else {
+		color.R = 0xFF;
+		color.G = 0xFF;
+		color.B = 0xFF;
+	}
+	return color;
+}
+
+void SetPreviewWebViewEnvBackground() noexcept {
+	if (g_webviewBgEnvSet) {
+		return;
+	}
+	const LPCWSTR value = IsPreviewDarkTheme() ? L"FF0D1117" : L"FFFFFFFF";
+	SetEnvironmentVariableW(L"WEBVIEW2_DEFAULT_BACKGROUND_COLOR", value);
+	g_webviewBgEnvSet = true;
+	PreviewMode_Log(L"WEBVIEW2_DEFAULT_BACKGROUND_COLOR=%s", value);
+}
+#endif
+
 void UpdatePreviewContainerBackground() noexcept {
 	if (g_previewContainerBrush != nullptr) {
 		DeleteObject(g_previewContainerBrush);
 		g_previewContainerBrush = nullptr;
 	}
-	const COLORREF color = (np2StyleTheme == StyleTheme_Dark)
-		? RGB(0x0D, 0x11, 0x17)
-		: RGB(0xFF, 0xFF, 0xFF);
+	const COLORREF color = GetPreviewBackgroundColor();
 	g_previewContainerBrush = CreateSolidBrush(color);
 	if (g_hwndContainer) {
-		SetClassLongPtr(g_hwndContainer, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(g_previewContainerBrush));
 		InvalidateRect(g_hwndContainer, nullptr, TRUE);
 	}
 }
@@ -396,6 +433,7 @@ void ClosePreviewShell(LPWSTR &dst, size_t &remaining, bool dark, bool withMerma
 void BuildPreviewShellDocument(LPWSTR html, size_t htmlCch, bool dark) noexcept {
 	static const WCHAR shellLight[] =
 		L"<!DOCTYPE html><html><head><meta charset=\"utf-8\"><base target=\"_self\"><style>"
+		L"html,body{min-height:100%;background:#fff;}"
 		L"body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;"
 		L"line-height:1.6;word-wrap:break-word;margin:16px 24px;color:#24292f;background:#fff;}"
 		L"h1,h2,h3,h4,h5,h6{margin-top:24px;margin-bottom:16px;font-weight:600;line-height:1.25;}"
@@ -437,6 +475,7 @@ void BuildPreviewShellDocument(LPWSTR html, size_t htmlCch, bool dark) noexcept 
 		L"})();</script></body></html>";
 	static const WCHAR shellDark[] =
 		L"<!DOCTYPE html><html><head><meta charset=\"utf-8\"><base target=\"_self\"><style>"
+		L"html,body{min-height:100%;background:#0d1117;}"
 		L"body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;"
 		L"line-height:1.6;word-wrap:break-word;margin:16px 24px;color:#c9d1d9;background:#0d1117;}"
 		L"h1,h2,h3,h4,h5,h6{margin-top:24px;margin-bottom:16px;font-weight:600;line-height:1.25;color:#e6edf3;}"
@@ -711,10 +750,35 @@ void ApplyPreviewZoom() noexcept {
 	g_controller->put_ZoomFactor(factor);
 }
 
+void ApplyPreviewWebViewBackground() noexcept {
+	if (g_controller == nullptr) {
+		return;
+	}
+	ComPtr<ICoreWebView2Controller2> controller2;
+	if (FAILED(g_controller.As(&controller2)) || !controller2) {
+		PreviewMode_Log(L"ApplyPreviewWebViewBackground: ICoreWebView2Controller2 unavailable");
+		return;
+	}
+	const COREWEBVIEW2_COLOR color = MakePreviewWebViewColor();
+	const HRESULT hr = controller2->put_DefaultBackgroundColor(color);
+	PreviewMode_Log(L"put_DefaultBackgroundColor hr=0x%08lX dark=%d", hr, IsPreviewDarkTheme() ? 1 : 0);
+}
+
+void SetPreviewWebViewVisible(bool visible) noexcept {
+	if (g_controller == nullptr) {
+		return;
+	}
+	g_controller->put_IsVisible(visible ? TRUE : FALSE);
+}
+
 void ResizeWebViewToContainer() noexcept {
 	if (g_controller == nullptr || g_hwndContainer == nullptr) {
 		return;
 	}
+	if (g_splitterDragging) {
+		return;
+	}
+	ApplyPreviewWebViewBackground();
 	RECT rc {};
 	GetClientRect(g_hwndContainer, &rc);
 	if (rc.right <= rc.left || rc.bottom <= rc.top) {
@@ -726,13 +790,23 @@ void ResizeWebViewToContainer() noexcept {
 }
 
 void ShowWebViewUnavailableHtml(LPCWSTR message) noexcept {
+	const bool dark = IsPreviewDarkTheme();
 	WCHAR html[1024];
-	swprintf(html, NP2_COUNTOF(html),
-		L"<!DOCTYPE html><html><body style=\"font-family:Segoe UI;margin:24px;color:#24292f\">"
-		L"<h2>Preview unavailable</h2><p>%s</p>"
-		L"<p>Install the Evergreen <b>WebView2 Runtime</b> and restart Notepad.</p>"
-		L"</body></html>",
-		message ? message : L"WebView2 failed to initialize.");
+	if (dark) {
+		swprintf(html, NP2_COUNTOF(html),
+			L"<!DOCTYPE html><html><body style=\"font-family:Segoe UI;margin:24px;color:#c9d1d9;background:#0d1117\">"
+			L"<h2>Preview unavailable</h2><p>%s</p>"
+			L"<p>Install the Evergreen <b>WebView2 Runtime</b> and restart Notepad.</p>"
+			L"</body></html>",
+			message ? message : L"WebView2 failed to initialize.");
+	} else {
+		swprintf(html, NP2_COUNTOF(html),
+			L"<!DOCTYPE html><html><body style=\"font-family:Segoe UI;margin:24px;color:#24292f;background:#fff\">"
+			L"<h2>Preview unavailable</h2><p>%s</p>"
+			L"<p>Install the Evergreen <b>WebView2 Runtime</b> and restart Notepad.</p>"
+			L"</body></html>",
+			message ? message : L"WebView2 failed to initialize.");
+	}
 	g_pendingHtml = html;
 }
 
@@ -896,6 +970,10 @@ HRESULT HandleNavigationCompleted(ICoreWebView2 * /*sender*/, ICoreWebView2Navig
 	PreviewMode_Log(L"NavigationCompleted success=%d", g_shellReady ? 1 : 0);
 	if (g_shellReady) {
 		FlushPendingBody();
+		if (!g_splitterDragging) {
+			ResizeWebViewToContainer();
+			SetPreviewWebViewVisible(true);
+		}
 	}
 	return S_OK;
 }
@@ -905,6 +983,10 @@ void NavigatePendingHtml() noexcept {
 		return;
 	}
 	g_shellReady = false;
+	SetPreviewWebViewVisible(FALSE);
+	if (g_hwndContainer) {
+		InvalidateRect(g_hwndContainer, nullptr, TRUE);
+	}
 	const HRESULT hr = g_webview->NavigateToString(g_pendingHtml.c_str());
 	PreviewMode_Log(L"NavigateToString shell hr=0x%08lX len=%zu", hr, g_pendingHtml.size());
 	g_pendingHtml.clear();
@@ -975,7 +1057,8 @@ void AttachWebViewHandlers() noexcept {
 		}
 	}
 
-	g_controller->put_IsVisible(TRUE);
+	ApplyPreviewWebViewBackground();
+	SetPreviewWebViewVisible(FALSE);
 	ResizeWebViewToContainer();
 	ApplyPreviewZoom();
 }
@@ -989,6 +1072,7 @@ void OnControllerCreated(HRESULT result, ICoreWebView2Controller *controller) {
 		return;
 	}
 	g_controller = controller;
+	ApplyPreviewWebViewBackground();
 	HRESULT hr = g_controller->get_CoreWebView2(&g_webview);
 	if (FAILED(hr) || g_webview == nullptr) {
 		g_webviewFailed = true;
@@ -1111,6 +1195,7 @@ bool EnsureBrowser() noexcept {
 	if (!g_webviewCreating) {
 		g_webviewCreating = true;
 		CreateDirectoryW(g_webviewUserDataDir, nullptr);
+		SetPreviewWebViewEnvBackground();
 		PreviewMode_Log(L"EnsureBrowser: CreateCoreWebView2Environment userData=%s", g_webviewUserDataDir);
 		const HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
 			nullptr, g_webviewUserDataDir, nullptr,
@@ -1136,7 +1221,7 @@ void LoadHtmlIntoBrowser(LPCWSTR bodyHtml) noexcept {
 	if (bodyHtml == nullptr) {
 		return;
 	}
-	const bool dark = (np2StyleTheme == StyleTheme_Dark);
+	const bool dark = IsPreviewDarkTheme();
 	const bool isFullDocument = (_wcsnicmp(bodyHtml, L"<html", 5) == 0 || _wcsnicmp(bodyHtml, L"<!DOC", 5) == 0);
 
 	if (!EnsureBrowser()) {
@@ -1300,7 +1385,19 @@ void ApplyPaneLayout(int x, int y, int cx, int cy, int *pEditHeight) noexcept {
 		ShowSplitter(true);
 	}
 	SetWindowPos(g_hwndContainer, HWND_TOP, x, previewY, cx, previewCy, SWP_NOACTIVATE);
+	if (g_hwndContainer) {
+		InvalidateRect(g_hwndContainer, nullptr, TRUE);
+	}
+#if defined(NP2_USE_WEBVIEW2)
+	if (g_splitterDragging) {
+		SetPreviewWebViewVisible(false);
+	} else {
+		ResizeWebViewToContainer();
+		SetPreviewWebViewVisible(true);
+	}
+#else
 	ResizeWebViewToContainer();
+#endif
 	ShowContainer(true);
 }
 
@@ -1383,6 +1480,13 @@ LRESULT CALLBACK PreviewSplitterProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 		g_splitterDragging = true;
 		g_splitterDragStartY = GET_Y_LPARAM(lParam);
 		g_splitterDragStartPercent = g_previewPercent;
+#if defined(NP2_USE_WEBVIEW2)
+		SetPreviewWebViewVisible(false);
+		if (g_hwndContainer) {
+			InvalidateRect(g_hwndContainer, nullptr, TRUE);
+			UpdateWindow(g_hwndContainer);
+		}
+#endif
 		return 0;
 
 	case WM_MOUSEMOVE:
@@ -1395,6 +1499,7 @@ LRESULT CALLBACK PreviewSplitterProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 		if (g_splitterDragging) {
 			g_splitterDragging = false;
 			ReleaseCapture();
+			RelayoutClientNow();
 			RequestRelayout();
 		}
 		return 0;
@@ -1402,6 +1507,7 @@ LRESULT CALLBACK PreviewSplitterProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 	case WM_CAPTURECHANGED:
 		if (g_splitterDragging && AsPointer<HWND>(lParam) != hwnd) {
 			g_splitterDragging = false;
+			RelayoutClientNow();
 			RequestRelayout();
 		}
 		return 0;
@@ -1435,6 +1541,20 @@ LRESULT CALLBACK PreviewSplitterProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 	return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
+LRESULT CALLBACK PreviewContainerProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) noexcept {
+	switch (msg) {
+	case WM_ERASEBKGND:
+		if (g_previewContainerBrush != nullptr) {
+			RECT rc;
+			GetClientRect(hwnd, &rc);
+			FillRect(AsPointer<HDC>(wParam), &rc, g_previewContainerBrush);
+			return TRUE;
+		}
+		break;
+	}
+	return DefWindowProc(hwnd, msg, wParam, lParam);
+}
+
 void EnsureSplitterClass() noexcept {
 	if (g_splitterClassRegistered) {
 		return;
@@ -1450,14 +1570,31 @@ void EnsureSplitterClass() noexcept {
 	g_splitterClassRegistered = true;
 }
 
+void EnsurePreviewContainerClass() noexcept {
+	if (g_containerClassRegistered) {
+		return;
+	}
+	WNDCLASSEXW wc = {};
+	wc.cbSize = sizeof(wc);
+	wc.style = CS_HREDRAW | CS_VREDRAW;
+	wc.lpfnWndProc = PreviewContainerProc;
+	wc.hInstance = GetModuleHandle(nullptr);
+	wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+	wc.hbrBackground = nullptr;
+	wc.lpszClassName = PREVIEW_CONTAINER_CLASS;
+	RegisterClassExW(&wc);
+	g_containerClassRegistered = true;
+}
+
 } // namespace
 
 void PreviewMode_Init(HWND hwndMain) noexcept {
 	PreviewMode_InitLog();
 	g_hwndMain = hwndMain;
 	EnsureSplitterClass();
+	EnsurePreviewContainerClass();
 	UpdatePreviewContainerBackground();
-	g_hwndContainer = CreateWindowExW(0, WC_STATIC, L"", WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
+	g_hwndContainer = CreateWindowExW(0, PREVIEW_CONTAINER_CLASS, L"", WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
 		0, 0, 0, 0, hwndMain, reinterpret_cast<HMENU>(static_cast<UINT_PTR>(0xFB10)), GetModuleHandle(nullptr), nullptr);
 	g_hwndSplitter = CreateWindowExW(0, PREVIEW_SPLITTER_CLASS, L"", WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
 		0, 0, 0, 0, hwndMain, reinterpret_cast<HMENU>(static_cast<UINT_PTR>(0xFB11)), GetModuleHandle(nullptr), nullptr);
@@ -1674,6 +1811,10 @@ void PreviewMode_OnThemeChanged() noexcept {
 	}
 	UpdatePreviewContainerBackground();
 #if defined(NP2_USE_WEBVIEW2)
+	ApplyPreviewWebViewBackground();
+	if (g_splitterDragging) {
+		SetPreviewWebViewVisible(false);
+	}
 	g_shellReady = false;
 #endif
 	if (g_active) {
