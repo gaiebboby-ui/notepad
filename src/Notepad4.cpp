@@ -69,7 +69,7 @@ static HICON hTrayIcon = nullptr;
 static UINT uTrayIconDPI = 0;
 
 #define TOOLBAR_COMMAND_BASE	IDT_FILE_NEW
-#define DefaultToolbarButtons	L"22 3 0 1 27 2 0 4 18 19 0 5 6 0 7 8 9 20 0 10 11 0 12 0 24 0 13 14 0 15 16 0 28 17"
+#define DefaultToolbarButtons	L"22 3 0 1 27 2 0 4 18 19 0 5 6 0 7 8 9 20 0 10 11 0 12 0 24 0 13 14 0 15 16 0 28 29 17"
 static TBBUTTON tbbMainWnd[] = {
 	{0, 	0, 					0, 				 TBSTYLE_SEP, {0}, 0, 0},
 	{0, 	IDT_FILE_NEW, 		TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
@@ -100,6 +100,7 @@ static TBBUTTON tbbMainWnd[] = {
 	{25, 	IDT_VIEW_ALWAYSONTOP, 	TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
 	{26, 	IDT_FILE_NEWWINDOW, 	TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
 	{27, 	IDT_VIEW_PREVIEW, 	TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
+	{28, 	IDT_VIEW_PREVIEW_MAXIMIZE, 	TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
 };
 
 WCHAR	szIniFile[MAX_PATH];
@@ -992,7 +993,7 @@ void InitInstance(HINSTANCE hInstance, int nCmdShow) {
 	}
 
 	bInitDone = true;
-	if (bPreviewModeIni && pLexCurrent != nullptr && PreviewMode_IsSupported(pLexCurrent->rid)) {
+	if ((bPreviewModeIni || PreviewMode_IsMaximized()) && pLexCurrent != nullptr && PreviewMode_IsSupported(pLexCurrent->rid)) {
 		PreviewMode_SetActive(true);
 	}
 	if (SciCall_GetLength() == 0) {
@@ -2597,9 +2598,9 @@ void MsgInitMenu(HWND hwnd, WPARAM wParam, LPARAM lParam) noexcept {
 	{
 		const bool previewSupported = pLexCurrent != nullptr && PreviewMode_IsSupported(pLexCurrent->rid);
 		EnableCmd(hmenu, IDM_VIEW_PREVIEW_MODE, previewSupported);
-		CheckCmd(hmenu, IDM_VIEW_PREVIEW_MODE, PreviewMode_IsActive());
-		EnableCmd(hmenu, IDM_VIEW_PREVIEW_MAXIMIZE, previewSupported && PreviewMode_IsActive());
-		CheckCmd(hmenu, IDM_VIEW_PREVIEW_MAXIMIZE, PreviewMode_IsMaximized());
+		CheckCmd(hmenu, IDM_VIEW_PREVIEW_MODE, PreviewMode_IsSplitActive());
+		EnableCmd(hmenu, IDM_VIEW_PREVIEW_MAXIMIZE, previewSupported);
+		CheckCmd(hmenu, IDM_VIEW_PREVIEW_MAXIMIZE, PreviewMode_IsActive() && PreviewMode_IsMaximized());
 		CheckCmd(hmenu, IDM_VIEW_PREVIEW_AUTO, PreviewMode_GetAutoEnable());
 	}
 	i = IDM_VIEW_FONTQUALITY_DEFAULT + iFontQuality;
@@ -3941,8 +3942,10 @@ LRESULT MsgCommand(HWND hwnd, WPARAM wParam, LPARAM lParam) {
 		DrawMenuBar(hwnd);
 		break;
 
+	case IDT_VIEW_PREVIEW_MAXIMIZE:
 	case IDM_VIEW_PREVIEW_MAXIMIZE:
 		PreviewMode_ToggleMaximize();
+		UpdateToolbar();
 		DrawMenuBar(hwnd);
 		break;
 
@@ -6585,7 +6588,9 @@ void UpdateToolbar() noexcept {
 	{
 		const bool previewSupported = pLexCurrent != nullptr && PreviewMode_IsSupported(pLexCurrent->rid);
 		EnableTool(IDT_VIEW_PREVIEW, previewSupported);
-		CheckTool(IDT_VIEW_PREVIEW, PreviewMode_IsActive());
+		CheckTool(IDT_VIEW_PREVIEW, PreviewMode_IsSplitActive());
+		EnableTool(IDT_VIEW_PREVIEW_MAXIMIZE, previewSupported);
+		CheckTool(IDT_VIEW_PREVIEW_MAXIMIZE, PreviewMode_IsActive() && PreviewMode_IsMaximized());
 	}
 	CheckTool(IDT_VIEW_ALWAYSONTOP, IsTopMost());
 }

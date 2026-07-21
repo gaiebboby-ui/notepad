@@ -13,6 +13,7 @@ void PreviewMode_SetMainWindow(HWND hwndMain) noexcept;
 
 bool PreviewMode_IsSupported(int lexerRid) noexcept;
 bool PreviewMode_IsActive() noexcept;
+bool PreviewMode_IsSplitActive() noexcept;
 bool PreviewMode_GetAutoEnable() noexcept;
 void PreviewMode_SetAutoEnable(bool enable) noexcept;
 

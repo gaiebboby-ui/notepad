@@ -26,6 +26,8 @@
 #include "DarkMode.h"
 #include "Notepad4.h"
 #include "PreviewMode.h"
+#include "PreviewFrontmatter.h"
+#include "PreviewPreprocessor.h"
 #include "md4c/md4c.h"
 
 #if defined(_MSC_VER)
@@ -59,6 +61,7 @@ extern HWND hwndEdit;
 #define PREVIEW_DEBOUNCE_MS			420
 #define PREVIEW_DEBOUNCE_FIRST_MS	80
 #define PREVIEW_DEBOUNCE_MERMAID_MS	560
+#define PREVIEW_DEBOUNCE_MATH_MS	560
 #define PREVIEW_MAX_TEXT_BYTES		(2 * 1024 * 1024)
 #define PREVIEW_INIT_TIMEOUT_MS		15000
 #define PREVIEW_SPLITTER_CY			5
@@ -68,6 +71,7 @@ extern HWND hwndEdit;
 #define PREVIEW_ZOOM_MAX			250
 #define PREVIEW_ZOOM_STEP			10
 #define PREVIEW_ZOOM_DEFAULT		100
+#define NP2_PREVIEW_SHELL_VERSION	3
 
 #define ID_PREVIEW_CTX_COPY			0xFB30
 #define ID_PREVIEW_CTX_SELECTALL	0xFB31
@@ -115,6 +119,8 @@ bool g_previewLogEnabled = true;
 WCHAR g_previewAssetsDir[MAX_PATH];
 WCHAR g_webviewUserDataDir[MAX_PATH];
 bool g_lastHadMermaid;
+bool g_lastHadMath;
+PreviewMetadata g_lastMetadata {};
 
 #if defined(NP2_USE_WEBVIEW2)
 ComPtr<ICoreWebView2Environment> g_env;
@@ -129,12 +135,14 @@ EventRegistrationToken g_tokenNewWindowRequested {};
 EventRegistrationToken g_tokenContextMenuRequested {};
 EventRegistrationToken g_tokenAcceleratorKeyPressed {};
 EventRegistrationToken g_tokenNavigationCompleted {};
+EventRegistrationToken g_tokenWebMessageReceived {};
 std::wstring g_pendingHtml;
 std::wstring g_pendingBody;
 std::wstring g_contextLinkUrl;
 bool g_contextHasSelection;
 bool g_shellReady;
 bool g_shellDark;
+int g_shellVersionLoaded;
 bool g_webviewBgEnvSet;
 #endif
 
@@ -233,7 +241,7 @@ void SchedulePreviewUpdate() noexcept {
 #if defined(NP2_USE_WEBVIEW2)
 	if (!g_shellReady) {
 		delay = PREVIEW_DEBOUNCE_FIRST_MS;
-	} else if (g_lastHadMermaid) {
+	} else if (g_lastHadMermaid || g_lastHadMath) {
 		delay = PREVIEW_DEBOUNCE_MERMAID_MS;
 	}
 #endif
@@ -267,9 +275,6 @@ COREWEBVIEW2_COLOR MakePreviewWebViewColor() noexcept {
 }
 
 void SetPreviewWebViewEnvBackground() noexcept {
-	if (g_webviewBgEnvSet) {
-		return;
-	}
 	const LPCWSTR value = IsPreviewDarkTheme() ? L"FF0D1117" : L"FFFFFFFF";
 	SetEnvironmentVariableW(L"WEBVIEW2_DEFAULT_BACKGROUND_COLOR", value);
 	g_webviewBgEnvSet = true;
@@ -431,93 +436,36 @@ void ClosePreviewShell(LPWSTR &dst, size_t &remaining, bool dark, bool withMerma
 }
 
 void BuildPreviewShellDocument(LPWSTR html, size_t htmlCch, bool dark) noexcept {
-	static const WCHAR shellLight[] =
-		L"<!DOCTYPE html><html><head><meta charset=\"utf-8\"><base target=\"_self\"><style>"
-		L"html,body{min-height:100%;background:#fff;}"
-		L"body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;"
-		L"line-height:1.6;word-wrap:break-word;margin:16px 24px;color:#24292f;background:#fff;}"
-		L"h1,h2,h3,h4,h5,h6{margin-top:24px;margin-bottom:16px;font-weight:600;line-height:1.25;}"
-		L"h1{font-size:2em;border-bottom:1px solid #d0d7de;padding-bottom:.3em;}"
-		L"h2{font-size:1.5em;border-bottom:1px solid #d0d7de;padding-bottom:.3em;}"
-		L"h3{font-size:1.25em;}h4{font-size:1em;}h5{font-size:.875em;}h6{font-size:.85em;color:#57606a;}"
-		L"p,ul,ol,dl,table,pre,blockquote{margin-top:0;margin-bottom:16px;}"
-		L"ul,ol{padding-left:2em;}li+li{margin-top:.25em;}"
-		L"li.task-list-item{list-style-type:none;}li.task-list-item input{margin:0 .2em .25em -1.6em;vertical-align:middle;}"
-		L"code,tt{font-family:Consolas,Courier New,monospace;font-size:85%;background:#f6f8fa;padding:.2em .4em;border-radius:6px;}"
-		L"pre{font-family:Consolas,Courier New,monospace;font-size:85%;background:#f6f8fa;padding:16px;overflow:auto;border-radius:6px;line-height:1.45;}"
-		L"pre code{background:transparent;padding:0;font-size:100%;}"
-		L"blockquote{border-left:4px solid #d0d7de;margin:0;padding:0 1em;color:#57606a;}"
-		L"table{border-collapse:collapse;width:100%;margin:16px 0;display:block;overflow:auto;}"
-		L"th,td{border:1px solid #d0d7de;padding:6px 13px;}th{font-weight:600;background:#f6f8fa;}"
-		L"tr:nth-child(2n){background:#f6f8fa;}hr{border:0;border-top:1px solid #d0d7de;height:0;margin:24px 0;}"
-		L"a{color:#0969da;text-decoration:none;}a:hover{text-decoration:underline;}"
-		L"img{max-width:100%;box-sizing:content-box;}del{opacity:.8;}"
-		L".mermaid{background:transparent;text-align:center;}"
-		L"#np2-content{min-height:1px;}"
-		L"html,body,*{-ms-user-select:text;user-select:text;}"
-		L"::selection{background:#B3D4FC;}"
-		L"</style></head><body><div id=\"np2-content\"></div>"
-		L"<script src=\"https://np2.preview/mermaid.min.js\"></script>"
-		L"<script>(function(){"
-		L"var dark=0;"
-		L"function bootMermaid(){try{if(window.mermaid){mermaid.initialize({startOnLoad:false,securityLevel:'loose',theme:dark?'dark':'default'});}}catch(e){}}"
-		L"function convertMermaid(root){root.querySelectorAll('pre code.language-mermaid').forEach(function(code){"
-		L"var pre=code.parentElement;if(!pre)return;var div=document.createElement('div');div.className='mermaid';"
-		L"div.textContent=code.textContent;pre.replaceWith(div);});}"
-		L"async function np2Apply(html){var root=document.getElementById('np2-content');if(!root)return;"
-		L"var y=window.scrollY||document.documentElement.scrollTop||0;"
-		L"root.innerHTML=html||'';convertMermaid(root);"
-		L"try{bootMermaid();if(window.mermaid){await mermaid.run({querySelector:'#np2-content .mermaid'});}}catch(e){}"
-		L"window.scrollTo(0,y);}"
-		L"bootMermaid();"
-		L"if(window.chrome&&window.chrome.webview){window.chrome.webview.addEventListener('message',function(e){"
-		L"var data=e.data;np2Apply(typeof data==='string'?data:(data&&data.html)||'');});}"
-		L"})();</script></body></html>";
-	static const WCHAR shellDark[] =
-		L"<!DOCTYPE html><html><head><meta charset=\"utf-8\"><base target=\"_self\"><style>"
-		L"html,body{min-height:100%;background:#0d1117;}"
-		L"body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;"
-		L"line-height:1.6;word-wrap:break-word;margin:16px 24px;color:#c9d1d9;background:#0d1117;}"
-		L"h1,h2,h3,h4,h5,h6{margin-top:24px;margin-bottom:16px;font-weight:600;line-height:1.25;color:#e6edf3;}"
-		L"h1{font-size:2em;border-bottom:1px solid #30363d;padding-bottom:.3em;}"
-		L"h2{font-size:1.5em;border-bottom:1px solid #30363d;padding-bottom:.3em;}"
-		L"h3{font-size:1.25em;}h4{font-size:1em;}h5{font-size:.875em;}h6{font-size:.85em;color:#8b949e;}"
-		L"p,ul,ol,dl,table,pre,blockquote{margin-top:0;margin-bottom:16px;}"
-		L"ul,ol{padding-left:2em;}li+li{margin-top:.25em;}"
-		L"li.task-list-item{list-style-type:none;}li.task-list-item input{margin:0 .2em .25em -1.6em;vertical-align:middle;}"
-		L"code,tt{font-family:Consolas,Courier New,monospace;font-size:85%;background:#161b22;padding:.2em .4em;border-radius:6px;}"
-		L"pre{font-family:Consolas,Courier New,monospace;font-size:85%;background:#161b22;padding:16px;overflow:auto;border-radius:6px;line-height:1.45;}"
-		L"pre code{background:transparent;padding:0;font-size:100%;}"
-		L"blockquote{border-left:4px solid #3b434b;margin:0;padding:0 1em;color:#8b949e;}"
-		L"table{border-collapse:collapse;width:100%;margin:16px 0;display:block;overflow:auto;}"
-		L"th,td{border:1px solid #30363d;padding:6px 13px;}th{font-weight:600;background:#161b22;}"
-		L"tr:nth-child(2n){background:#161b22;}hr{border:0;border-top:1px solid #30363d;height:0;margin:24px 0;}"
-		L"a{color:#58a6ff;text-decoration:none;}a:hover{text-decoration:underline;}"
-		L"img{max-width:100%;box-sizing:content-box;}del{opacity:.8;}"
-		L".mermaid{background:transparent;text-align:center;}"
-		L"#np2-content{min-height:1px;}"
-		L"html,body,*{-ms-user-select:text;user-select:text;}"
-		L"::selection{background:#264F78;}"
-		L"</style></head><body><div id=\"np2-content\"></div>"
-		L"<script src=\"https://np2.preview/mermaid.min.js\"></script>"
-		L"<script>(function(){"
-		L"var dark=1;"
-		L"function bootMermaid(){try{if(window.mermaid){mermaid.initialize({startOnLoad:false,securityLevel:'loose',theme:dark?'dark':'default'});}}catch(e){}}"
-		L"function convertMermaid(root){root.querySelectorAll('pre code.language-mermaid').forEach(function(code){"
-		L"var pre=code.parentElement;if(!pre)return;var div=document.createElement('div');div.className='mermaid';"
-		L"div.textContent=code.textContent;pre.replaceWith(div);});}"
-		L"async function np2Apply(html){var root=document.getElementById('np2-content');if(!root)return;"
-		L"var y=window.scrollY||document.documentElement.scrollTop||0;"
-		L"root.innerHTML=html||'';convertMermaid(root);"
-		L"try{bootMermaid();if(window.mermaid){await mermaid.run({querySelector:'#np2-content .mermaid'});}}catch(e){}"
-		L"window.scrollTo(0,y);}"
-		L"bootMermaid();"
-		L"if(window.chrome&&window.chrome.webview){window.chrome.webview.addEventListener('message',function(e){"
-		L"var data=e.data;np2Apply(typeof data==='string'?data:(data&&data.html)||'');});}"
-		L"})();</script></body></html>";
-	LPCWSTR src = dark ? shellDark : shellLight;
-	wcsncpy(html, src, htmlCch - 1);
-	html[htmlCch - 1] = L'\0';
+	static const WCHAR shellHead[] =
+		L"<!DOCTYPE html><html><head><meta charset=\"utf-8\"><base target=\"_self\">"
+		L"<link rel=\"stylesheet\" href=\"https://np2.preview/katex.min.css?v=2\">"
+		L"<link rel=\"stylesheet\" href=\"https://np2.preview/github.min.css?v=2\" id=\"np2-hljs-light\">"
+		L"<link rel=\"stylesheet\" href=\"https://np2.preview/github-dark.min.css?v=2\" id=\"np2-hljs-dark\" disabled>"
+		L"<link rel=\"stylesheet\" href=\"https://np2.preview/mdpp.css?v=2\">"
+		L"</head><body class=\"";
+	static const WCHAR shellMid[] =
+		L"\"><div id=\"np2-content\"></div>"
+		L"<script src=\"https://np2.preview/katex.min.js?v=2\"></script>"
+		L"<script src=\"https://np2.preview/highlight.min.js?v=2\"></script>"
+		L"<script src=\"https://np2.preview/mermaid.min.js?v=2\"></script>"
+		L"<script src=\"https://np2.preview/mdpp.js?v=2\" data-dark=\"";
+	static const WCHAR shellTail[] =
+		L"\"></script></body></html>";
+
+	LPWSTR dst = html;
+	size_t remaining = htmlCch;
+	auto append = [&](LPCWSTR s) {
+		while (*s && remaining > 1) {
+			*dst++ = *s++;
+			--remaining;
+		}
+	};
+	append(shellHead);
+	append(dark ? L"np2-dark" : L"");
+	append(shellMid);
+	append(dark ? L"1" : L"0");
+	append(shellTail);
+	*dst = L'\0';
 }
 
 struct MdHtmlBuffer {
@@ -602,18 +550,50 @@ bool Utf8ContainsMermaidFence(const char *text, size_t len) noexcept {
 	return false;
 }
 
+void RenderMarkdownFragment(const char *text, size_t len, char *html, size_t htmlCap) noexcept {
+	if (htmlCap == 0) {
+		return;
+	}
+	html[0] = '\0';
+	MdHtmlBuffer body;
+	body.cap = max<size_t>(len * 3, 4096);
+	body.data = static_cast<char *>(NP2HeapAlloc(body.cap));
+	if (body.data == nullptr) {
+		return;
+	}
+	body.data[0] = '\0';
+	const int rc = md_html(text, static_cast<MD_SIZE>(len), MdHtmlAppendOutput, &body, MD_DIALECT_MDPP, 0);
+	if (rc == 0 && body.len > 0 && !body.oom) {
+		const size_t copyLen = min(body.len, htmlCap - 1);
+		memcpy(html, body.data, copyLen);
+		html[copyLen] = '\0';
+	}
+	NP2HeapFree(body.data);
+}
+
 void MarkdownToHtml(const char *text, size_t len, LPWSTR html, size_t htmlCch) noexcept {
 	LPWSTR dst = html;
 	size_t remaining = htmlCch;
 	html[0] = L'\0';
 
+	char *preprocessed = nullptr;
+	size_t preLen = 0;
+	const char *mdText = text;
+	size_t mdLen = len;
+	char *ownedPre = nullptr;
+
+	if (PreviewPreprocessMarkdown(text, len, &preprocessed, &preLen, RenderMarkdownFragment)) {
+		mdText = preprocessed;
+		mdLen = preLen;
+		ownedPre = preprocessed;
+	}
+
 	MdHtmlBuffer body;
-	body.cap = max<size_t>(len * 3, 8192);
+	body.cap = max<size_t>(mdLen * 3, 8192);
 	body.data = static_cast<char *>(NP2HeapAlloc(body.cap));
 	if (body.data != nullptr) {
 		body.data[0] = '\0';
-		const unsigned parserFlags = MD_DIALECT_GITHUB;
-		const int rc = md_html(text, static_cast<MD_SIZE>(len), MdHtmlAppendOutput, &body, parserFlags, 0);
+		const int rc = md_html(mdText, static_cast<MD_SIZE>(mdLen), MdHtmlAppendOutput, &body, MD_DIALECT_MDPP, 0);
 		if (rc == 0 && body.len > 0 && !body.oom) {
 			AppendWideFromUtf8(dst, remaining, body.data, body.len);
 		} else {
@@ -625,9 +605,15 @@ void MarkdownToHtml(const char *text, size_t len, LPWSTR html, size_t htmlCch) n
 		AppendHtmlEscapedUtf8(text, len, dst, remaining);
 	}
 	*dst = L'\0';
+
+	if (ownedPre != nullptr) {
+		PreviewPreprocessFree(ownedPre);
+	}
+
 	const bool withMermaid = Utf8ContainsMermaidFence(text, len);
 	g_lastHadMermaid = withMermaid;
-	PreviewMode_Log(L"MarkdownToHtml body done mermaid=%d", withMermaid ? 1 : 0);
+	g_lastHadMath = Utf8ContainsMath(text, len);
+	PreviewMode_Log(L"MarkdownToHtml body done mermaid=%d math=%d", withMermaid ? 1 : 0, g_lastHadMath ? 1 : 0);
 }
 
 void CsvToHtml(const char *text, size_t len, LPWSTR html, size_t htmlCch) noexcept {
@@ -774,6 +760,9 @@ void SetPreviewWebViewVisible(bool visible) noexcept {
 void ResizeWebViewToContainer() noexcept {
 	if (g_controller == nullptr || g_hwndContainer == nullptr) {
 		return;
+	}
+	if (g_hwndContainer) {
+		InvalidateRect(g_hwndContainer, nullptr, TRUE);
 	}
 	ApplyPreviewWebViewBackground();
 	RECT rc {};
@@ -943,6 +932,155 @@ HRESULT HandleAcceleratorKeyPressed(ICoreWebView2Controller * /*sender*/, ICoreW
 	return S_OK;
 }
 
+bool PreviewMetadataHasEffects(const PreviewMetadata *meta) noexcept {
+	if (meta == nullptr) {
+		return false;
+	}
+	return meta->hasFrontmatter
+		|| meta->containerMaxWidth[0] != '\0'
+		|| meta->contentFont[0] != '\0'
+		|| meta->contentTextColor[0] != '\0'
+		|| meta->mediaBlur
+		|| meta->containerInnerBg[0] != '\0'
+		|| meta->containerShadowBlur > 0
+		|| _stricmp(meta->theme, "auto") != 0
+		|| _stricmp(meta->textDirection, "ltr") != 0;
+}
+
+void AppendHtmlAttrUtf8(LPWSTR &dst, size_t &remaining, LPCWSTR attrName, const char *utf8Val) noexcept {
+	if (utf8Val == nullptr || utf8Val[0] == '\0' || remaining <= 1) {
+		return;
+	}
+	WCHAR wval[256];
+	const int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8Val, -1, wval, NP2_COUNTOF(wval));
+	if (wlen <= 0) {
+		return;
+	}
+	while (*attrName && remaining > 1) {
+		*dst++ = *attrName++;
+		--remaining;
+	}
+	if (remaining <= 2) {
+		return;
+	}
+	*dst++ = L'"';
+	--remaining;
+	for (int i = 0; wval[i] != L'\0' && remaining > 2; ++i) {
+		const WCHAR c = wval[i];
+		if (c == L'"' || c == L'&') {
+			if (remaining <= 4) {
+				break;
+			}
+			*dst++ = L'&';
+			if (c == L'"') {
+				*dst++ = L'q';
+				*dst++ = L't';
+				*dst++ = L';';
+			} else {
+				*dst++ = L'a';
+				*dst++ = L'm';
+				*dst++ = L'p';
+				*dst++ = L';';
+			}
+			remaining -= 4;
+			continue;
+		}
+		*dst++ = c;
+		--remaining;
+	}
+	if (remaining > 1) {
+		*dst++ = L'"';
+		--remaining;
+	}
+}
+
+void AppendUtf8Lit(LPWSTR &dst, size_t &remaining, const char *utf8Val) noexcept {
+	if (utf8Val == nullptr || utf8Val[0] == '\0' || remaining <= 1) {
+		return;
+	}
+	WCHAR wval[256];
+	const int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8Val, -1, wval, NP2_COUNTOF(wval));
+	if (wlen <= 0) {
+		return;
+	}
+	for (int i = 0; wval[i] != L'\0' && remaining > 1; ++i) {
+		*dst++ = wval[i];
+		--remaining;
+	}
+}
+
+void WrapHtmlWithMetadata(LPWSTR html, size_t htmlCch, const PreviewMetadata *meta) noexcept {
+	if (html == nullptr || html[0] == L'\0' || !PreviewMetadataHasEffects(meta)) {
+		return;
+	}
+
+	WCHAR open[1024];
+	LPWSTR op = open;
+	size_t orem = NP2_COUNTOF(open);
+	auto appendLit = [&](LPCWSTR s) noexcept {
+		while (*s && orem > 1) {
+			*op++ = *s++;
+			--orem;
+		}
+	};
+
+	appendLit(L"<div id=\"np2-body\"");
+	if (meta->textDirection[0] != '\0') {
+		AppendHtmlAttrUtf8(op, orem, L" dir=", meta->textDirection);
+	}
+	AppendHtmlAttrUtf8(op, orem, L" data-theme=", meta->theme[0] != '\0' ? meta->theme : "auto");
+	appendLit(meta->mediaBlur ? L" data-media-blur=\"1\"" : L" data-media-blur=\"0\"");
+	AppendHtmlAttrUtf8(op, orem, L" data-content-font=", meta->contentFont);
+	AppendHtmlAttrUtf8(op, orem, L" data-content-text-color=", meta->contentTextColor);
+	AppendHtmlAttrUtf8(op, orem, L" data-container-inner-bg=", meta->containerInnerBg);
+	AppendHtmlAttrUtf8(op, orem, L" data-container-shadow-color=", meta->containerShadowColor);
+	if (meta->containerShadowOffset != 0) {
+		WCHAR num[16];
+		swprintf(num, NP2_COUNTOF(num), L" data-container-shadow-offset=\"%d\"", meta->containerShadowOffset);
+		appendLit(num);
+	}
+	if (meta->containerShadowBlur > 0) {
+		WCHAR num[16];
+		swprintf(num, NP2_COUNTOF(num), L" data-container-shadow-blur=\"%d\"", meta->containerShadowBlur);
+		appendLit(num);
+	}
+
+	appendLit(L" style=\"");
+	if (meta->contentFont[0] != '\0') {
+		appendLit(L"font-family:");
+		AppendUtf8Lit(op, orem, meta->contentFont);
+		appendLit(L";");
+	}
+	if (meta->containerInnerBg[0] != '\0') {
+		appendLit(L"background:");
+		AppendUtf8Lit(op, orem, meta->containerInnerBg);
+		appendLit(L";");
+	}
+	if (meta->containerShadowBlur > 0) {
+		WCHAR shadow[128];
+		const char *color = meta->containerShadowColor[0] != '\0' ? meta->containerShadowColor : "rgba(0,0,0,.2)";
+		WCHAR wcolor[48];
+		MultiByteToWideChar(CP_UTF8, 0, color, -1, wcolor, NP2_COUNTOF(wcolor));
+		swprintf(shadow, NP2_COUNTOF(shadow), L"box-shadow:%dpx %dpx %dpx %s;",
+			meta->containerShadowOffset, meta->containerShadowOffset, meta->containerShadowBlur, wcolor);
+		appendLit(shadow);
+	}
+	appendLit(L"\">");
+	*op = L'\0';
+
+	const size_t bodyLen = wcslen(html);
+	const size_t openLen = wcslen(open);
+	const size_t closeLen = 6; // </div>
+	if (bodyLen + openLen + closeLen + 1 > htmlCch) {
+		PreviewMode_Log(L"WrapHtmlWithMetadata: buffer too small (need %zu, have %zu)", bodyLen + openLen + closeLen + 1, htmlCch);
+		return;
+	}
+
+	memmove(html + openLen, html, (bodyLen + 1) * sizeof(WCHAR));
+	memcpy(html, open, openLen * sizeof(WCHAR));
+	memcpy(html + openLen + bodyLen, L"</div>", closeLen * sizeof(WCHAR));
+}
+
 void PostBodyHtml(LPCWSTR bodyHtml) noexcept {
 	if (g_webview == nullptr || bodyHtml == nullptr) {
 		return;
@@ -956,6 +1094,20 @@ void FlushPendingBody() noexcept {
 		PostBodyHtml(g_pendingBody.c_str());
 		g_pendingBody.clear();
 	}
+}
+
+HRESULT HandleWebMessageReceived(ICoreWebView2 * /*sender*/, ICoreWebView2WebMessageReceivedEventArgs *args) {
+	LPWSTR message = nullptr;
+	if (FAILED(args->TryGetWebMessageAsString(&message)) || message == nullptr) {
+		return S_OK;
+	}
+	if (wcsncmp(message, L"np2:zoom:", 9) == 0) {
+		const int step = (message[9] == L'+') ? PREVIEW_ZOOM_STEP : -PREVIEW_ZOOM_STEP;
+		g_previewZoomPercent = clamp(g_previewZoomPercent + step, PREVIEW_ZOOM_MIN, PREVIEW_ZOOM_MAX);
+		ApplyPreviewZoom();
+	}
+	CoTaskMemFree(message);
+	return S_OK;
 }
 
 HRESULT HandleNavigationCompleted(ICoreWebView2 * /*sender*/, ICoreWebView2NavigationCompletedEventArgs *args) {
@@ -1006,6 +1158,13 @@ void AttachWebViewHandlers() noexcept {
 				return HandleNavigationCompleted(sender, args);
 			}).Get(),
 		&g_tokenNavigationCompleted);
+
+	g_webview->add_WebMessageReceived(
+		Callback<ICoreWebView2WebMessageReceivedEventHandler>(
+			[](ICoreWebView2 *sender, ICoreWebView2WebMessageReceivedEventArgs *args) -> HRESULT {
+				return HandleWebMessageReceived(sender, args);
+			}).Get(),
+		&g_tokenWebMessageReceived);
 
 	g_webview->add_NewWindowRequested(
 		Callback<ICoreWebView2NewWindowRequestedEventHandler>(
@@ -1145,6 +1304,10 @@ void DestroyBrowser() noexcept {
 			g_webview->remove_NavigationCompleted(g_tokenNavigationCompleted);
 			g_tokenNavigationCompleted = {};
 		}
+		if (g_tokenWebMessageReceived.value) {
+			g_webview->remove_WebMessageReceived(g_tokenWebMessageReceived);
+			g_tokenWebMessageReceived = {};
+		}
 		if (g_tokenNewWindowRequested.value) {
 			g_webview->remove_NewWindowRequested(g_tokenNewWindowRequested);
 			g_tokenNewWindowRequested = {};
@@ -1233,8 +1396,9 @@ void LoadHtmlIntoBrowser(LPCWSTR bodyHtml) noexcept {
 		return;
 	}
 
-	if (!g_shellReady || g_shellDark != dark) {
+	if (!g_shellReady || g_shellDark != dark || g_shellVersionLoaded != NP2_PREVIEW_SHELL_VERSION) {
 		g_shellDark = dark;
+		g_shellVersionLoaded = NP2_PREVIEW_SHELL_VERSION;
 		g_pendingBody = bodyHtml;
 		WCHAR shell[16384];
 		BuildPreviewShellDocument(shell, NP2_COUNTOF(shell), dark);
@@ -1273,12 +1437,18 @@ void UpdatePreviewContent() noexcept {
 	GetDocumentUtf8(text, textCapacity);
 	const size_t textLen = strlen(text);
 
+	const char *mdBody = text;
+	size_t mdBodyLen = textLen;
+	PreviewMetadataInit(&g_lastMetadata);
+
 	const size_t htmlCch = textCapacity * 8 + 8192;
 	LPWSTR html = static_cast<LPWSTR>(NP2HeapAlloc(htmlCch * sizeof(WCHAR)));
 
 	switch (pLexCurrent->rid) {
 	case NP2LEX_MARKDOWN:
-		MarkdownToHtml(text, textLen, html, htmlCch);
+		PreviewExtractFrontmatter(text, textLen, &g_lastMetadata, &mdBody, &mdBodyLen);
+		MarkdownToHtml(mdBody, mdBodyLen, html, htmlCch);
+		WrapHtmlWithMetadata(html, htmlCch, &g_lastMetadata);
 		break;
 	case NP2LEX_CSV:
 		CsvToHtml(text, textLen, html, htmlCch);
@@ -1312,12 +1482,12 @@ void UpdatePreviewContent() noexcept {
 }
 
 void ComputePaneHeights(int cy, int &editCy, int &previewCy) noexcept {
-	const int avail = max(0, cy - PREVIEW_SPLITTER_CY);
 	if (g_previewMaximized) {
-		previewCy = avail;
+		previewCy = max(0, cy);
 		editCy = 0;
 		return;
 	}
+	const int avail = max(0, cy - PREVIEW_SPLITTER_CY);
 	previewCy = avail * g_previewPercent / 100;
 	previewCy = clamp(previewCy, PREVIEW_MIN_PANE_CY, max(PREVIEW_MIN_PANE_CY, avail - PREVIEW_MIN_PANE_CY));
 	editCy = avail - previewCy;
@@ -1327,17 +1497,15 @@ bool HandlePreviewMouseWheel(WPARAM wParam, LPARAM lParam) noexcept {
 	if (!g_active || !(GetKeyState(VK_CONTROL) & 0x8000)) {
 		return false;
 	}
-	POINT pt { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-	ScreenToClient(g_hwndMain, &pt);
-	if (g_lastLayoutCx <= 0 || g_lastLayoutCy <= 0) {
+	if (g_hwndContainer == nullptr) {
 		return false;
 	}
-	int editCy = 0;
-	int previewCy = 0;
-	ComputePaneHeights(g_lastLayoutCy, editCy, previewCy);
-	const int previewTop = g_lastLayoutY + editCy + PREVIEW_SPLITTER_CY;
-	const RECT rcPreview { g_lastLayoutX, previewTop, g_lastLayoutX + g_lastLayoutCx, previewTop + previewCy };
-	if (!PtInRect(&rcPreview, pt)) {
+	(void)lParam;
+	POINT cursorPt {};
+	GetCursorPos(&cursorPt);
+	RECT rc {};
+	GetWindowRect(g_hwndContainer, &rc);
+	if (!PtInRect(&rc, cursorPt)) {
 		return false;
 	}
 	const short delta = GET_WHEEL_DELTA_WPARAM(wParam);
@@ -1373,15 +1541,20 @@ void ApplyPaneLayout(int x, int y, int cx, int cy, int *pEditHeight) noexcept {
 	}
 
 	const int splitterY = y + editCy;
-	const int previewY = splitterY + PREVIEW_SPLITTER_CY;
+	const int previewY = g_previewMaximized ? y : (splitterY + PREVIEW_SPLITTER_CY);
 
 	if (g_hwndSplitter != nullptr) {
-		SetWindowPos(g_hwndSplitter, HWND_TOP, x, splitterY, cx, PREVIEW_SPLITTER_CY, SWP_NOACTIVATE);
-		ShowSplitter(true);
+		if (g_previewMaximized) {
+			ShowSplitter(false);
+		} else {
+			SetWindowPos(g_hwndSplitter, HWND_TOP, x, splitterY, cx, PREVIEW_SPLITTER_CY, SWP_NOACTIVATE);
+			ShowSplitter(true);
+		}
 	}
 	SetWindowPos(g_hwndContainer, HWND_TOP, x, previewY, cx, previewCy, SWP_NOACTIVATE);
 	if (g_hwndContainer) {
 		InvalidateRect(g_hwndContainer, nullptr, TRUE);
+		UpdateWindow(g_hwndContainer);
 	}
 	ResizeWebViewToContainer();
 	ShowContainer(true);
@@ -1660,6 +1833,7 @@ void PreviewMode_SetActive(bool active) noexcept {
 	} else {
 		ShowContainer(false);
 		ShowSplitter(false);
+		g_previewMaximized = false;
 		if (g_hwndMain != nullptr) {
 			KillTimer(g_hwndMain, ID_PREVIEW_TIMER);
 		}
@@ -1676,7 +1850,13 @@ void PreviewMode_SetActive(bool active) noexcept {
 }
 
 void PreviewMode_Toggle() noexcept {
-	PreviewMode_SetActive(!g_active);
+	if (g_active && !g_previewMaximized) {
+		PreviewMode_SetActive(false);
+	} else {
+		PreviewMode_SetActive(true);
+		g_previewMaximized = false;
+		RequestRelayout();
+	}
 }
 
 void PreviewMode_Layout(int x, int y, int cx, int cy, int *pEditHeight) noexcept {
@@ -1701,22 +1881,25 @@ int PreviewMode_GetHeightPercent() noexcept {
 	return g_previewPercent;
 }
 
+bool PreviewMode_IsSplitActive() noexcept {
+	return g_active && !g_previewMaximized;
+}
+
 bool PreviewMode_IsMaximized() noexcept {
 	return g_previewMaximized;
 }
 
 void PreviewMode_ToggleMaximize() noexcept {
-	if (!g_active) {
-		return;
-	}
-	if (g_previewMaximized) {
-		g_previewMaximized = false;
-		g_previewPercent = g_savedPreviewPercent;
+	if (g_active && g_previewMaximized) {
+		PreviewMode_SetActive(false);
 	} else {
-		g_savedPreviewPercent = g_previewPercent;
+		if (!g_previewMaximized) {
+			g_savedPreviewPercent = g_previewPercent;
+		}
+		PreviewMode_SetActive(true);
 		g_previewMaximized = true;
+		RequestRelayout();
 	}
-	RequestRelayout();
 }
 
 void PreviewMode_SetMaximized(bool maximized) noexcept {
@@ -1790,6 +1973,7 @@ void PreviewMode_OnThemeChanged() noexcept {
 	}
 	UpdatePreviewContainerBackground();
 #if defined(NP2_USE_WEBVIEW2)
+	SetPreviewWebViewEnvBackground();
 	ApplyPreviewWebViewBackground();
 	g_shellReady = false;
 #endif

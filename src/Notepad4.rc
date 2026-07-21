@@ -1813,6 +1813,7 @@ BEGIN
     IDT_EDIT_REPLACE        "Replace"
     IDT_VIEW_WORDWRAP       "Word Wrap"
     IDT_VIEW_PREVIEW        "Preview Mode"
+    IDT_VIEW_PREVIEW_MAXIMIZE "Maximize Preview"
     IDT_VIEW_ZOOMIN         "Zoom In"
     IDT_VIEW_ZOOMOUT        "Zoom Out"
     IDT_VIEW_SCHEME         "Select Scheme"
