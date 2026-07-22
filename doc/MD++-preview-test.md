@@ -14,6 +14,8 @@ safety:
 
 > Откройте этот файл в Notepad, включите **View → Preview Mode**.
 > Сверяйте каждую секцию с ожидаемым результатом.
+>
+> Полный синтаксис: [`MD++-markup.md`](MD++-markup.md).
 
 ---
 
@@ -186,19 +188,64 @@ YouTube: https://www.youtube.com/watch?v=dQw4w9WgXcQ
 
 <!-- EXPECTED: .admonition-note с цветной полосой, не сырой [!NOTE] -->
 !!! note Заголовок заметки
-    Текст выноски в стиле Rentry (конвертируется в GFM admonition).
+    Текст выноски в стиле Rentry (HTML admonition с кастомным title).
+
+<!-- EXPECTED: .admonition-info, title «Важно», bold в теле -->
+!!! info Важно
+    Этот блок — аналог гайда AgentRouter: для **разработчиков** и ролевиков.
+
+<!-- EXPECTED: .admonition-success, список в теле -->
+!!! success Что поддерживает мост
+    - Текстовый диалог
+    - Tool use / Function calling
+
+<!-- EXPECTED: .admonition-warning (регрессия) -->
+!!! warning Почему баланс тратится быстро
+    Текст предупреждения с **жирным** фрагментом.
 
 <!-- EXPECTED: цветной span.np2-c, не сырой %red% -->
 %red% Красный текст %% и %#0066CC% синий hex %%.
 
+<!-- EXPECTED: серый hex (канон %#…) в обычном абзаце -->
+%#8e9bb0% Серый текст канонической формой.%%
+
+<!-- EXPECTED: серый hex байпас %RRGGBB% без # внутри — обычный абзац -->
+%8e9bb0% Серый текст bare-hex байпасом.%%
+
+<!-- EXPECTED: H1 + серый span; в preview НЕТ видимой сырой # -->
+#%8e9bb0% Серый заголовок в стиле AgentRouter гайда.%%
+
 <!-- EXPECTED: красный текст до конца строки (без %%) -->
 %red% Красный текст без закрывающих процентов
+
+<!-- EXPECTED: **Установка:** → жирный (fail-handler **text:**) -->
+**Установка:**
+
+1. Первый шаг списка после жирного заголовка.
+
+<!-- EXPECTED: *** между блоками → hr, не три звёздочки -->
+***
+
+<!-- EXPECTED: цветной жирный по центру, не сырые ** -->
+-> %#00ffcc%**Исходный код прокси и обновления:**%% <-
 
 <!-- EXPECTED: text-align center, не сырой -> -->
 -> Текст по центру <-
 
 <!-- EXPECTED: text-align right -->
 -> Текст по правому краю ->
+
+<!-- EXPECTED: картинка по центру, не сырой ![…](…) -->
+-> ![Test banner](https://via.placeholder.com/320x80.png?text=Banner) <-
+
+<!-- EXPECTED: H1 по центру, без сырой решётки # -->
+-> # %#00ffcc%Centered colored H1%% <-
+
+<!-- EXPECTED: H2 по центру (форма из docs rentry: ## -> … <-) -->
+## -> Header form from rentry docs <-
+
+<!-- EXPECTED: жирный и ссылка по центру, не сырые ** и […](…) -->
+-> **Bold** and [example link](https://example.com) <-
 
 <!-- EXPECTED: .np2-spoiler / .spoiler, клик раскрывает -->
 !>Это спойлер Rentry — кликните
@@ -238,6 +285,69 @@ YouTube: https://www.youtube.com/watch?v=dQw4w9WgXcQ
     Тело выноски с **жирным** текстом.
 
 - Ожидание: цветной блок `.admonition-note`, заголовок и тело внутри блока.
+
+---
+
+## 12. Регрессии уже работающего [✓]
+
+Проверьте, что после правок Rentry **не сломалось** следующее.
+
+### 12.1 GFM admonitions
+
+<!-- EXPECTED: .admonition-note, не сырой [!NOTE] -->
+> [!NOTE]
+> GFM note body with **bold**.
+
+<!-- EXPECTED: .admonition-warning -->
+> [!WARNING]
+> GFM warning body.
+
+### 12.2 Typography / spoilers
+
+<!-- EXPECTED: mark, spoiler, rentry spoiler -->
+==highlighted== · ||click spoiler|| · !>rentry spoiler line
+
+### 12.3 Plain alignment + named color in paragraph
+
+<!-- EXPECTED: centered plain text; red span in sentence -->
+-> Plain centered text without images <-
+
+Ordinary paragraph with %red% red word %% inside.
+
+### 12.4 Image attrs
+
+<!-- EXPECTED: small floated image -->
+![Small](https://via.placeholder.com/64x64.png?text=IMG){64px:64px #left "tip"}
+
+Text should wrap beside the float when the pane is wide enough.
+
+### 12.5 TOC sample
+
+[TOC2]
+
+#### TOC target A
+#### TOC target B
+
+### 12.6 Tabs
+
+=== "Reg A"
+Tab panel A content.
+
+=== "Reg B"
+Tab panel B content.
+
+### 12.7 KaTeX + Mermaid + code
+
+Inline math $E=mc^2$ must render.
+
+```mermaid
+flowchart LR
+  Reg[Regression] --> Ok[Still works]
+```
+
+```bash
+echo "highlight.js still works"
+```
 
 ---
 

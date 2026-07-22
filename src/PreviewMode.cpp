@@ -446,7 +446,7 @@ void BuildPreviewShellDocument(LPWSTR html, size_t htmlCch, bool dark) noexcept 
 		L"<link rel=\"stylesheet\" href=\"https://np2.preview/katex.min.css?v=3\">"
 		L"<link rel=\"stylesheet\" href=\"https://np2.preview/github.min.css?v=3\" id=\"np2-hljs-light\">"
 		L"<link rel=\"stylesheet\" href=\"https://np2.preview/github-dark.min.css?v=3\" id=\"np2-hljs-dark\" disabled>"
-		L"<link rel=\"stylesheet\" href=\"https://np2.preview/mdpp.css?v=3\">"
+		L"<link rel=\"stylesheet\" href=\"https://np2.preview/mdpp.css?v=4\">"
 		L"</head><body class=\"";
 	static const WCHAR shellMid[] =
 		L"\"><div id=\"np2-content\"></div>"

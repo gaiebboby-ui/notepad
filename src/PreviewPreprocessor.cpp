@@ -238,7 +238,34 @@ void NormalizeGfmAdmonitions(GrowBuf *buf) noexcept {
 	}
 }
 
-void ConvertRentryAdmonitions(GrowBuf *buf) noexcept {
+const char *MapRentryAdmonitionClass(const char *type, size_t typeLen) noexcept {
+	if (typeLen == 0) {
+		return "warning";
+	}
+	if (_strnicmp(type, "info", typeLen) == 0 && typeLen == 4) return "info";
+	if (_strnicmp(type, "note", typeLen) == 0 && typeLen == 4) return "note";
+	if (_strnicmp(type, "warning", typeLen) == 0 && typeLen == 7) return "warning";
+	if (_strnicmp(type, "danger", typeLen) == 0 && typeLen == 6) return "danger";
+	if (_strnicmp(type, "success", typeLen) == 0 && typeLen == 7) return "success";
+	if (_strnicmp(type, "tip", typeLen) == 0 && typeLen == 3) return "tip";
+	if (_strnicmp(type, "important", typeLen) == 0 && typeLen == 9) return "important";
+	if (_strnicmp(type, "caution", typeLen) == 0 && typeLen == 7) return "caution";
+	if (_strnicmp(type, "greentext", typeLen) == 0 && typeLen == 8) return "tip";
+	return "warning";
+}
+
+void HtmlEscapeAppend(GrowBuf *out, const char *s, size_t n) noexcept {
+	for (size_t i = 0; i < n; ++i) {
+		const char c = s[i];
+		if (c == '&') AppendCStr(out, "&amp;");
+		else if (c == '<') AppendCStr(out, "&lt;");
+		else if (c == '>') AppendCStr(out, "&gt;");
+		else if (c == '"') AppendCStr(out, "&quot;");
+		else Append(out, &c, 1);
+	}
+}
+
+void ConvertRentryAdmonitions(GrowBuf *buf, PreviewMdRenderFn renderFn) noexcept {
 	if (buf->data == nullptr || buf->len == 0) return;
 	GrowBuf out {};
 	if (!Grow(&out, buf->len + 64)) {
@@ -254,45 +281,53 @@ void ConvertRentryAdmonitions(GrowBuf *buf) noexcept {
 			const char *typeStart = lineStart + 4;
 			const char *typeEnd = typeStart;
 			while (typeEnd < lineEnd && !isspace(static_cast<unsigned char>(*typeEnd))) ++typeEnd;
-			char gfmType[32];
-			size_t typeLen = static_cast<size_t>(typeEnd - typeStart);
-			typeLen = min(typeLen, sizeof(gfmType) - 1);
-			memcpy(gfmType, typeStart, typeLen);
-			gfmType[typeLen] = '\0';
-			_strupr(gfmType);
+			const size_t typeLen = static_cast<size_t>(typeEnd - typeStart);
+			const char *cls = MapRentryAdmonitionClass(typeStart, typeLen);
 			const char *titleStart = typeEnd;
 			while (titleStart < lineEnd && (*titleStart == ' ' || *titleStart == '\t')) ++titleStart;
-			AppendCStr(&out, "> [!");
-			AppendCStr(&out, gfmType);
-			AppendCStr(&out, "]\n");
-			if (titleStart < lineEnd) {
-				AppendCStr(&out, "> **");
-				Append(&out, titleStart, static_cast<size_t>(lineEnd - titleStart));
-				AppendCStr(&out, "**\n");
-			}
 
+			GrowBuf bodyMd {};
 			p = next;
 			while (p < end) {
 				const char *bodyStart = p;
 				const char *bodyEnd = LineEnd(p, end);
 				const char *bodyNext = SkipLine(p, end);
 				if (bodyStart >= bodyEnd) {
-					AppendCStr(&out, ">\n");
+					AppendCStr(&bodyMd, "\n");
 					p = bodyNext;
 					continue;
 				}
 				if (*bodyStart == ' ' || *bodyStart == '\t') {
 					while (bodyStart < bodyEnd && (*bodyStart == ' ' || *bodyStart == '\t')) ++bodyStart;
-					AppendCStr(&out, "> ");
 					if (bodyStart < bodyEnd) {
-						Append(&out, bodyStart, static_cast<size_t>(bodyEnd - bodyStart));
+						Append(&bodyMd, bodyStart, static_cast<size_t>(bodyEnd - bodyStart));
 					}
-					AppendCStr(&out, "\n");
+					AppendCStr(&bodyMd, "\n");
 					p = bodyNext;
 					continue;
 				}
 				break;
 			}
+
+			AppendCStr(&out, "<div class=\"admonition-");
+			AppendCStr(&out, cls);
+			AppendCStr(&out, "\"><p class=\"admonition-title\">");
+			if (titleStart < lineEnd) {
+				HtmlEscapeAppend(&out, titleStart, static_cast<size_t>(lineEnd - titleStart));
+			} else if (typeLen > 0) {
+				HtmlEscapeAppend(&out, typeStart, typeLen);
+			} else {
+				AppendCStr(&out, "warning");
+			}
+			AppendCStr(&out, "</p>");
+			if (renderFn != nullptr && bodyMd.data != nullptr && bodyMd.len > 0) {
+				char html[65536];
+				html[0] = '\0';
+				renderFn(bodyMd.data, bodyMd.len, html, sizeof(html));
+				AppendCStr(&out, html);
+			}
+			AppendCStr(&out, "</div>\n\n");
+			NP2HeapFree(bodyMd.data);
 			continue;
 		}
 
@@ -305,8 +340,134 @@ void ConvertRentryAdmonitions(GrowBuf *buf) noexcept {
 	}
 }
 
-void ConvertRentryColors(GrowBuf *buf) noexcept {
-	// %color% text %%  or  %color% text<EOL>  ->  <span class="np2-c" style="color:...">text</span>
+bool IsHexDigits(const char *s, size_t len) noexcept {
+	if (len != 3 && len != 6 && len != 8) return false;
+	for (size_t i = 0; i < len; ++i) {
+		if (!isxdigit(static_cast<unsigned char>(s[i]))) return false;
+	}
+	return true;
+}
+
+bool NeedsAtxSpaceBeforeColor(const GrowBuf *out) noexcept {
+	if (out == nullptr || out->data == nullptr || out->len == 0) {
+		return false;
+	}
+	size_t i = out->len;
+	while (i > 0 && out->data[i - 1] == '#') {
+		--i;
+	}
+	const size_t hashCount = out->len - i;
+	if (hashCount == 0 || hashCount > 6) {
+		return false;
+	}
+	if (i > 0 && out->data[i - 1] != '\n' && out->data[i - 1] != '\r') {
+		return false;
+	}
+	return true;
+}
+
+void StripOuterParagraphInPlace(char *html, size_t *lenInOut) noexcept {
+	if (html == nullptr || lenInOut == nullptr) {
+		return;
+	}
+	size_t n = *lenInOut;
+	while (n > 0 && (html[n - 1] == '\n' || html[n - 1] == '\r' || html[n - 1] == ' ')) {
+		--n;
+	}
+	if (n >= 7 && memcmp(html, "<p>", 3) == 0 && memcmp(html + n - 4, "</p>", 4) == 0) {
+		const size_t innerLen = n - 7;
+		memmove(html, html + 3, innerLen);
+		html[innerLen] = '\0';
+		*lenInOut = innerLen;
+	}
+}
+
+void EmitColorSpanTo(GrowBuf *out, const char *css, const char *text, size_t textLen,
+	PreviewMdRenderFn renderFn) noexcept {
+	if (NeedsAtxSpaceBeforeColor(out)) {
+		AppendCStr(out, " ");
+	}
+	char open[160];
+	snprintf(open, sizeof(open), "<span class=\"np2-c\" style=\"color:%s\">", css);
+	AppendCStr(out, open);
+	if (textLen > 0) {
+		if (renderFn != nullptr) {
+			char html[65536];
+			html[0] = '\0';
+			renderFn(text, textLen, html, sizeof(html));
+			size_t htmlLen = strlen(html);
+			StripOuterParagraphInPlace(html, &htmlLen);
+			if (htmlLen > 0) {
+				Append(out, html, htmlLen);
+			}
+		} else {
+			Append(out, text, textLen);
+		}
+	}
+	AppendCStr(out, "</span>");
+}
+
+bool FindColorTextEnd(const char *bufData, size_t bufLen, size_t textStart,
+	size_t *textEndOut, size_t *readOut) noexcept {
+	size_t close = textStart;
+	bool closedByPercent = false;
+	while (close < bufLen) {
+		if (close + 1 < bufLen && bufData[close] == '%' && bufData[close + 1] == '%') {
+			closedByPercent = true;
+			break;
+		}
+		if (bufData[close] == '\n' || bufData[close] == '\r') {
+			break;
+		}
+		++close;
+	}
+	*textEndOut = close;
+	*readOut = closedByPercent ? close + 2 : close;
+	return true;
+}
+
+void NormalizeBoldBeforeColon(GrowBuf *buf) noexcept {
+	// Fail-handler: **text:** (CommonMark often fails) -> **text**:
+	if (buf->data == nullptr || buf->len < 5) return;
+	size_t read = 0;
+	GrowBuf out {};
+	while (read < buf->len) {
+		if (read + 1 < buf->len && buf->data[read] == '*' && buf->data[read + 1] == '*') {
+			const size_t contentStart = read + 2;
+			size_t i = contentStart;
+			bool found = false;
+			while (i + 2 < buf->len && buf->data[i] != '\n' && buf->data[i] != '\r') {
+				if (buf->data[i] == ':' && buf->data[i + 1] == '*' && buf->data[i + 2] == '*') {
+					if (i > contentStart) {
+						AppendCStr(&out, "**");
+						Append(&out, buf->data + contentStart, i - contentStart);
+						AppendCStr(&out, "**:");
+						read = i + 3;
+						found = true;
+					}
+					break;
+				}
+				if (buf->data[i] == '*' && i + 1 < buf->len && buf->data[i + 1] == '*') {
+					break;
+				}
+				++i;
+			}
+			if (found) {
+				continue;
+			}
+		}
+		Append(&out, buf->data + read, 1);
+		++read;
+	}
+	if (out.data) {
+		NP2HeapFree(buf->data);
+		*buf = out;
+	}
+}
+
+void ConvertRentryColors(GrowBuf *buf, PreviewMdRenderFn renderFn) noexcept {
+	// %#hex% / %RRGGBB% (bare hex bypass) / %name% text %%  or to EOL
+	// Fail-handler: leading # before %hex% keeps ATX heading — insert space before span
 	if (buf->data == nullptr) return;
 	size_t read = 0;
 	GrowBuf out {};
@@ -322,33 +483,26 @@ void ConvertRentryColors(GrowBuf *buf) noexcept {
 				const char *css = nullptr;
 				char hexBuf[16];
 				if (colorLen > 0 && colorLen < sizeof(hexBuf) && colorName[0] == '#') {
-					memcpy(hexBuf, colorName, colorLen);
-					hexBuf[colorLen] = '\0';
+					const size_t digitsLen = colorLen - 1;
+					if (IsHexDigits(colorName + 1, digitsLen)) {
+						memcpy(hexBuf, colorName, colorLen);
+						hexBuf[colorLen] = '\0';
+						css = hexBuf;
+					}
+				} else if (colorLen > 0 && colorLen < sizeof(hexBuf) - 1 && IsHexDigits(colorName, colorLen)) {
+					hexBuf[0] = '#';
+					memcpy(hexBuf + 1, colorName, colorLen);
+					hexBuf[colorLen + 1] = '\0';
 					css = hexBuf;
 				} else if (colorLen > 0) {
 					css = MapRentryColor(colorName, colorLen);
 				}
 				if (css) {
-					size_t close = c1 + 1;
-					bool closedByPercent = false;
-					while (close < buf->len) {
-						if (close + 1 < buf->len && buf->data[close] == '%' && buf->data[close + 1] == '%') {
-							closedByPercent = true;
-							break;
-						}
-						if (buf->data[close] == '\n' || buf->data[close] == '\r') {
-							break;
-						}
-						++close;
-					}
-					char open[160];
-					snprintf(open, sizeof(open), "<span class=\"np2-c\" style=\"color:%s\">", css);
-					AppendCStr(&out, open);
-					if (close > c1 + 1) {
-						Append(&out, buf->data + c1 + 1, close - c1 - 1);
-					}
-					AppendCStr(&out, "</span>");
-					read = closedByPercent ? close + 2 : close;
+					size_t textEnd = 0;
+					size_t nextRead = read;
+					FindColorTextEnd(buf->data, buf->len, c1 + 1, &textEnd, &nextRead);
+					EmitColorSpanTo(&out, css, buf->data + c1 + 1, textEnd - (c1 + 1), renderFn);
+					read = nextRead;
 					continue;
 				}
 			}
@@ -362,7 +516,36 @@ void ConvertRentryColors(GrowBuf *buf) noexcept {
 	}
 }
 
-void ConvertAlignmentLines(GrowBuf *buf) noexcept {
+void EmitAlignedHtml(GrowBuf *out, const char *md, size_t mdLen, const char *cls,
+	PreviewMdRenderFn renderFn) noexcept {
+	AppendCStr(out, "<div class=\"");
+	AppendCStr(out, cls);
+	AppendCStr(out, "\">");
+	if (renderFn != nullptr && md != nullptr && mdLen > 0) {
+		char html[65536];
+		html[0] = '\0';
+		renderFn(md, mdLen, html, sizeof(html));
+		AppendCStr(out, html);
+	}
+	AppendCStr(out, "</div>\n\n");
+}
+
+bool MatchAlignSuffix(const char *content, const char *lineEnd, bool *isCenter, const char **contentEnd) noexcept {
+	if (lineEnd - content < 2) return false;
+	if (lineEnd[-2] == '<' && lineEnd[-1] == '-') {
+		*isCenter = true;
+		*contentEnd = lineEnd - 2;
+		return true;
+	}
+	if (lineEnd[-2] == '-' && lineEnd[-1] == '>') {
+		*isCenter = false;
+		*contentEnd = lineEnd - 2;
+		return true;
+	}
+	return false;
+}
+
+void ConvertAlignmentLines(GrowBuf *buf, PreviewMdRenderFn renderFn) noexcept {
 	if (buf->data == nullptr || buf->len == 0) return;
 	GrowBuf out {};
 	const char *p = buf->data;
@@ -371,24 +554,56 @@ void ConvertAlignmentLines(GrowBuf *buf) noexcept {
 		const char *lineStart = p;
 		const char *lineEnd = LineEnd(p, end);
 		const char *next = SkipLine(p, end);
+
+		// Form: -> content <-   or  -> content ->
 		if (static_cast<size_t>(lineEnd - lineStart) > 2 && memcmp(lineStart, "->", 2) == 0) {
 			const char *content = lineStart + 2;
 			while (content < lineEnd && *content == ' ') ++content;
-			if (lineEnd - content >= 2 && lineEnd[-2] == '<' && lineEnd[-1] == '-') {
-				AppendCStr(&out, "<p class=\"np2-align-center\">");
-				Append(&out, content, static_cast<size_t>((lineEnd - 2) - content));
-				AppendCStr(&out, "</p>\n");
-				p = next;
-				continue;
-			}
-			if (lineEnd - content >= 2 && lineEnd[-2] == '-' && lineEnd[-1] == '>') {
-				AppendCStr(&out, "<p class=\"np2-align-right\">");
-				Append(&out, content, static_cast<size_t>((lineEnd - 2) - content));
-				AppendCStr(&out, "</p>\n");
+			bool isCenter = false;
+			const char *contentEnd = nullptr;
+			if (MatchAlignSuffix(content, lineEnd, &isCenter, &contentEnd)) {
+				while (contentEnd > content && (contentEnd[-1] == ' ' || contentEnd[-1] == '\t')) --contentEnd;
+				EmitAlignedHtml(&out, content, static_cast<size_t>(contentEnd - content),
+					isCenter ? "np2-align-center" : "np2-align-right", renderFn);
 				p = next;
 				continue;
 			}
 		}
+
+		// Form: # -> Header <-  /  ## -> Header <-
+		{
+			const char *q = lineStart;
+			size_t hashes = 0;
+			while (q < lineEnd && *q == '#') {
+				++hashes;
+				++q;
+			}
+			if (hashes >= 1 && hashes <= 6) {
+				while (q < lineEnd && *q == ' ') ++q;
+				if (q + 2 <= lineEnd && memcmp(q, "->", 2) == 0) {
+					const char *content = q + 2;
+					while (content < lineEnd && *content == ' ') ++content;
+					bool isCenter = false;
+					const char *contentEnd = nullptr;
+					if (MatchAlignSuffix(content, lineEnd, &isCenter, &contentEnd)) {
+						while (contentEnd > content && (contentEnd[-1] == ' ' || contentEnd[-1] == '\t')) --contentEnd;
+						char md[4096];
+						size_t o = 0;
+						for (size_t i = 0; i < hashes && o + 1 < sizeof(md); ++i) md[o++] = '#';
+						if (o + 1 < sizeof(md)) md[o++] = ' ';
+						const size_t copy = min(static_cast<size_t>(contentEnd - content), sizeof(md) - o - 1);
+						memcpy(md + o, content, copy);
+						o += copy;
+						md[o] = '\0';
+						EmitAlignedHtml(&out, md, o,
+							isCenter ? "np2-align-center" : "np2-align-right", renderFn);
+						p = next;
+						continue;
+					}
+				}
+			}
+		}
+
 		Append(&out, lineStart, static_cast<size_t>(next - lineStart));
 		p = next;
 	}
@@ -701,9 +916,10 @@ bool PreviewPreprocessMarkdown(const char *input, size_t inputLen, char **output
 	Append(&buf, input, inputLen);
 
 	NormalizeGfmAdmonitions(&buf);
-	ConvertRentryAdmonitions(&buf);
-	ConvertRentryColors(&buf);
-	ConvertAlignmentLines(&buf);
+	NormalizeBoldBeforeColon(&buf);
+	ConvertRentryAdmonitions(&buf, renderFn);
+	ConvertRentryColors(&buf, renderFn);
+	ConvertAlignmentLines(&buf, renderFn);
 	ConvertRentrySpoilers(&buf);
 	ConvertImageAttributes(&buf);
 	ConvertTableCellNewlines(&buf);

@@ -13,4 +13,6 @@ Offline assets copied next to `Notepad.exe` as `preview/` on build.
 
 Virtual host: `https://np2.preview/` → `<exe>/preview/` (WebView2).
 
+**Markup reference:** [`doc/MD++-markup.md`](../doc/MD++-markup.md) — how to write all supported MD++ syntax (GFM, Rentry-compat, math, tabs, …).
+
 **Manual test:** open [`doc/MD++-preview-test.md`](../doc/MD++-preview-test.md) in Notepad with Preview Mode enabled.

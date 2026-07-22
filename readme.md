@@ -4,7 +4,7 @@
 
 Syntax highlighting, code folding, auto-completion, and API lists cover many programming languages and document types. The editor descends from Florian's [Notepad2](https://www.flos-freeware.ch/notepad2.html) and XhmikosR's [Notepad2-mod](https://xhmikosr.github.io/notepad2-mod/) (rewritten in modern C++). **matepath** is the bundled file browser plugin, based on Florian's [metapath](https://www.flos-freeware.ch/archive.html).
 
-**Docs:** [Preview Mode](doc/Preview-Mode.md) · [Fork changes](doc/FORK-CHANGES.md) · [Build](doc/wiki/Build-Notepad.md) · [CI/CD](doc/wiki/CI-CD.md)
+**Docs:** [Preview Mode](doc/Preview-Mode.md) · [MD++ markup](doc/MD++-markup.md) · [Fork changes](doc/FORK-CHANGES.md) · [Build](doc/wiki/Build-Notepad.md) · [CI/CD](doc/wiki/CI-CD.md)
 
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](License.txt) [![Latest release](https://img.shields.io/github/release/zufuliu/notepad4.svg)](https://github.com/zufuliu/notepad4/releases) [![Downloads](https://img.shields.io/github/downloads/zufuliu/notepad4/total.svg)](https://github.com/zufuliu/notepad4/releases)
 
@@ -20,7 +20,7 @@ Latest **x64** builds for Windows 10/11 (MSVC Release, all locales) are publishe
 
 ## Fork highlights (this repository)
 
-* **[Preview Mode](doc/Preview-Mode.md)** — split view with live preview for Markdown (GFM / md4c + Mermaid), HTML, XML, and CSV via WebView2; Ctrl+wheel zoom; http(s) links open in the system browser
+* **[Preview Mode](doc/Preview-Mode.md)** — split view with live preview for Markdown (GFM / md4c + Mermaid), HTML, XML, and CSV via WebView2; Ctrl+wheel zoom; http(s) links open in the system browser; [MD++ markup reference](doc/MD++-markup.md)
 * **Dark theme** — `Notepad DarkTheme.ini` and shell dark mode (`DarkMode` module)
 * **Toolbar** — larger default buttons (+20% scale); Preview Mode button with dedicated icon (before Close)
 * **Build / CI** — documented in [doc/wiki/](doc/wiki/); release zips named `Notepad_*.zip`

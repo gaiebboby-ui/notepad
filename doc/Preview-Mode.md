@@ -2,6 +2,7 @@
 
 Live preview for Markdown, HTML, XML, and CSV in a split view inside Notepad.
 
+**MD++ markup reference:** [`MD++-markup.md`](MD++-markup.md) — how to write every supported construct.  
 **MD++ test document:** open [`MD++-preview-test.md`](MD++-preview-test.md) to verify all extended Markdown features.
 
 ## Quick start
@@ -27,6 +28,8 @@ Live preview for Markdown, HTML, XML, and CSV in a split view inside Notepad.
 
 ### MD++ Markdown extensions
 
+Full syntax with examples: **[`MD++-markup.md`](MD++-markup.md)**.
+
 | Feature | Syntax |
 |---------|--------|
 | Admonitions | `> [!NOTE]`, `> [!WARNING]`, … |
@@ -35,9 +38,9 @@ Live preview for Markdown, HTML, XML, and CSV in a split view inside Notepad.
 | Math | `$E=mc^2$`, `$$\int f(x)dx$$` |
 | Frontmatter | `---` YAML block at file start |
 | TOC | `[TOC]` or `[TOC2]` |
-| Tabs | `=== "Tab title"` + indented content |
+| Tabs | `=== "Tab title"` + content |
 | Image attrs | `![alt](url){300px:200px #left "title"}` |
-| Rentry (compat) | `!!! note`, `%red% text %%` (or `%red% text` to EOL), `-> center <-`, `!>spoiler` |
+| Rentry (compat) | `!!! info\|note\|warning\|success`, `%red%` / `%#hex%`, `-> center <-`, `!>spoiler` |
 
 Other schemes do not offer preview; toggling preview on them has no effect.
 
