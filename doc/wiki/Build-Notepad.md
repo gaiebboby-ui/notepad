@@ -109,7 +109,7 @@ See `tools\ImageTool.py` for the full icon list.
 | `res/Toolbar*.bmp` | Toolbar images |
 | `doc/Notepad DarkTheme.ini` | Bundled dark scheme |
 
-**Runtime:** Evergreen WebView2 Runtime (usually preinstalled on Windows 10/11).
+**Runtime:** Evergreen WebView2 Runtime (usually preinstalled on Windows 10/11). Optional fat artifact `Notepad_x64_with_WebView2` bundles Fixed Version **131.0.2903.146** (pin: [`build/webview2-fixed-version.json`](../../build/webview2-fixed-version.json)) for machines without Evergreen, targeting Win10 ~19041/19044 compatibility with SDK `1.0.2903.40`.
 
 ## CodeLite / other
 

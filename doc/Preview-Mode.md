@@ -128,8 +128,17 @@ For ASCII art or Mermaid source that relies on trailing spaces, keep strip trail
 
 ### Preview shows “Preview unavailable”
 
-- Install the Evergreen [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) and restart.
+- Install the Evergreen [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) and restart, **or** use the portable **`Notepad_x64_with_WebView2`** artifact (bundles Fixed Version Runtime 131.x under `WebView2\`).
 - Check `NotepadPreview.log` beside `Notepad.exe`.
+
+### Slim vs with_WebView2 builds
+
+| Artifact | Runtime | Notes |
+|----------|---------|--------|
+| `Notepad_x64` | System Evergreen | Smaller zip; needs WebView2 installed on the machine |
+| `Notepad_x64_with_WebView2` | Fixed Version **131.0.2903.146** in `WebView2\` | Self-contained Preview; aimed at Windows 10 **19041/19044**-class systems and matching SDK `1.0.2903.40` |
+
+Licenses for the bundled runtime ship inside `WebView2\` plus root `NOTICE-WebView2.txt` / [`License.txt`](../License.txt).
 
 ### Mermaid / KaTeX / code highlighting missing
 
@@ -169,6 +178,7 @@ Or use **View → Customize Toolbar** to restore defaults.
 - Module: `src/PreviewMode.cpp`, `src/PreviewFrontmatter.cpp`, `src/PreviewPreprocessor.cpp`
 - Markdown: `src/md4c/` with `MD_DIALECT_MDPP`
 - Browser: **WebView2** (Edge Chromium); SDK under `third_party/webview2/`
+- Runtime: Evergreen by default; optional fat zip bundles Fixed Version 131 under `WebView2\`
 - Assets: `preview/` mapped as virtual host `np2.preview` (mermaid, katex, highlight.js, `mdpp.css`, `mdpp.js`)
 - Updates: timer + posted `APPM_PREVIEW_UPDATE` to avoid re-entrancy hangs
 - Editor monospace for Markdown code/tables: `font:$(Code)` in `src/EditLexers/stlMarkdown.cpp`

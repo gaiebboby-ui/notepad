@@ -4,6 +4,7 @@
 bin
 build/bin
 build/temp*
+build/cache/
 build/*.zip
 release-temp/
 build/CodeLite/*.mk

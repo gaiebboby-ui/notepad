@@ -123,6 +123,7 @@ bool g_lastHadMath;
 PreviewMetadata g_lastMetadata {};
 
 #if defined(NP2_USE_WEBVIEW2)
+WCHAR g_webviewBrowserFolder[MAX_PATH];
 ComPtr<ICoreWebView2Environment> g_env;
 ComPtr<ICoreWebView2Controller> g_controller;
 ComPtr<ICoreWebView2> g_webview;
@@ -130,6 +131,8 @@ bool g_webviewCreating;
 bool g_webviewReady;
 bool g_webviewFailed;
 bool g_virtualHostMapped;
+bool g_webviewBrowserFolderResolved;
+bool g_webviewFixedVersionAclsApplied;
 EventRegistrationToken g_tokenNavigationStarting {};
 EventRegistrationToken g_tokenNewWindowRequested {};
 EventRegistrationToken g_tokenContextMenuRequested {};
@@ -203,6 +206,11 @@ void PreviewMode_InitLog() noexcept {
 	PathCombineW(g_previewLogPath, exePath, L"NotepadPreview.log");
 	PathCombineW(g_previewAssetsDir, exePath, L"preview");
 	PathCombineW(g_webviewUserDataDir, exePath, L"WebView2Data");
+#if defined(NP2_USE_WEBVIEW2)
+	g_webviewBrowserFolder[0] = L'\0';
+	g_webviewBrowserFolderResolved = false;
+	g_webviewFixedVersionAclsApplied = false;
+#endif
 
 	WCHAR env[8];
 	g_previewLogEnabled = (GetEnvironmentVariableW(L"NP2_PREVIEW_LOG", env, NP2_COUNTOF(env)) == 0)
@@ -786,23 +794,161 @@ void ResizeWebViewToContainer() noexcept {
 
 void ShowWebViewUnavailableHtml(LPCWSTR message) noexcept {
 	const bool dark = IsPreviewDarkTheme();
-	WCHAR html[1024];
+	WCHAR html[1536];
 	if (dark) {
 		swprintf(html, NP2_COUNTOF(html),
 			L"<!DOCTYPE html><html><body style=\"font-family:Segoe UI;margin:24px;color:#c9d1d9;background:#0d1117\">"
 			L"<h2>Preview unavailable</h2><p>%s</p>"
-			L"<p>Install the Evergreen <b>WebView2 Runtime</b> and restart Notepad.</p>"
+			L"<p>Install the Evergreen <b>WebView2 Runtime</b> and restart Notepad, "
+			L"or use the <b>with_WebView2</b> portable build (bundles Fixed Version Runtime).</p>"
 			L"</body></html>",
 			message ? message : L"WebView2 failed to initialize.");
 	} else {
 		swprintf(html, NP2_COUNTOF(html),
 			L"<!DOCTYPE html><html><body style=\"font-family:Segoe UI;margin:24px;color:#24292f;background:#fff\">"
 			L"<h2>Preview unavailable</h2><p>%s</p>"
-			L"<p>Install the Evergreen <b>WebView2 Runtime</b> and restart Notepad.</p>"
+			L"<p>Install the Evergreen <b>WebView2 Runtime</b> and restart Notepad, "
+			L"or use the <b>with_WebView2</b> portable build (bundles Fixed Version Runtime).</p>"
 			L"</body></html>",
 			message ? message : L"WebView2 failed to initialize.");
 	}
 	g_pendingHtml = html;
+}
+
+bool FolderHasWebView2Executable(LPCWSTR folder) noexcept {
+	if (folder == nullptr || folder[0] == L'\0') {
+		return false;
+	}
+	WCHAR exe[MAX_PATH];
+	if (!PathCombineW(exe, folder, L"msedgewebview2.exe")) {
+		return false;
+	}
+	return PathFileExistsW(exe) != FALSE;
+}
+
+// Prefer <exe>\WebView2\; also accept a nested Microsoft.WebView2.FixedVersionRuntime.* folder.
+bool ResolveFixedVersionBrowserFolder(LPWSTR outFolder, DWORD cchFolder) noexcept {
+	if (outFolder == nullptr || cchFolder == 0) {
+		return false;
+	}
+	outFolder[0] = L'\0';
+
+	WCHAR exeDir[MAX_PATH];
+	if (GetModuleFileNameW(nullptr, exeDir, NP2_COUNTOF(exeDir)) == 0) {
+		return false;
+	}
+	PathRemoveFileSpecW(exeDir);
+
+	WCHAR candidate[MAX_PATH];
+	if (!PathCombineW(candidate, exeDir, L"WebView2")) {
+		return false;
+	}
+	if (FolderHasWebView2Executable(candidate)) {
+		wcsncpy_s(outFolder, cchFolder, candidate, _TRUNCATE);
+		return true;
+	}
+
+	WCHAR search[MAX_PATH];
+	if (!PathCombineW(search, candidate, L"Microsoft.WebView2.FixedVersionRuntime.*")) {
+		return false;
+	}
+	WIN32_FIND_DATAW fd {};
+	const HANDLE hFind = FindFirstFileW(search, &fd);
+	if (hFind == INVALID_HANDLE_VALUE) {
+		return false;
+	}
+	bool found = false;
+	do {
+		if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+			continue;
+		}
+		if (fd.cFileName[0] == L'.') {
+			continue;
+		}
+		WCHAR nested[MAX_PATH];
+		if (!PathCombineW(nested, candidate, fd.cFileName)) {
+			continue;
+		}
+		if (FolderHasWebView2Executable(nested)) {
+			wcsncpy_s(outFolder, cchFolder, nested, _TRUNCATE);
+			found = true;
+			break;
+		}
+	} while (FindNextFileW(hFind, &fd));
+	FindClose(hFind);
+	return found;
+}
+
+bool IsWindows11OrNewer() noexcept {
+	using RtlGetVersionPtr = LONG(WINAPI *)(OSVERSIONINFOW *);
+	HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+	if (ntdll == nullptr) {
+		return false;
+	}
+	const auto rtlGetVersion = DLLFunction<RtlGetVersionPtr>(ntdll, "RtlGetVersion");
+	if (rtlGetVersion == nullptr) {
+		return false;
+	}
+	OSVERSIONINFOW ovi {};
+	ovi.dwOSVersionInfoSize = sizeof(ovi);
+	if (rtlGetVersion(&ovi) != 0) {
+		return false;
+	}
+	// Windows 11 starts at build 22000.
+	return ovi.dwMajorVersion > 10 || (ovi.dwMajorVersion == 10 && ovi.dwBuildNumber >= 22000);
+}
+
+void EnsureFixedVersionAppContainerAcls(LPCWSTR browserFolder) noexcept {
+	if (browserFolder == nullptr || browserFolder[0] == L'\0' || g_webviewFixedVersionAclsApplied) {
+		return;
+	}
+	g_webviewFixedVersionAclsApplied = true;
+	// Fixed Version >= 120 on Windows 10 needs App Container RX on the runtime folder.
+	// Windows 11 is unaffected; skip spawning icacls there.
+	if (IsWindows11OrNewer()) {
+		PreviewMode_Log(L"Fixed Version ACL: skipped on Windows 11+");
+		return;
+	}
+
+	WCHAR cmd[MAX_PATH * 2];
+	const LPCWSTR grants[] = {
+		L"*S-1-15-2-1:(OI)(CI)(RX)",
+		L"*S-1-15-2-2:(OI)(CI)(RX)",
+	};
+	for (LPCWSTR grant : grants) {
+		swprintf(cmd, NP2_COUNTOF(cmd), L"icacls \"%s\" /grant %s", browserFolder, grant);
+		STARTUPINFOW si {};
+		si.cb = sizeof(si);
+		si.dwFlags = STARTF_USESHOWWINDOW;
+		si.wShowWindow = SW_HIDE;
+		PROCESS_INFORMATION pi {};
+		WCHAR cmdline[MAX_PATH * 2];
+		wcsncpy_s(cmdline, cmd, _TRUNCATE);
+		if (CreateProcessW(nullptr, cmdline, nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+			WaitForSingleObject(pi.hProcess, 15000);
+			DWORD exitCode = 1;
+			GetExitCodeProcess(pi.hProcess, &exitCode);
+			CloseHandle(pi.hThread);
+			CloseHandle(pi.hProcess);
+			PreviewMode_Log(L"icacls grant %s exit=%lu", grant, exitCode);
+		} else {
+			PreviewMode_Log(L"icacls CreateProcess failed grant=%s err=%lu", grant, GetLastError());
+		}
+	}
+}
+
+LPCWSTR GetResolvedBrowserExecutableFolder() noexcept {
+	if (!g_webviewBrowserFolderResolved) {
+		g_webviewBrowserFolderResolved = true;
+		if (ResolveFixedVersionBrowserFolder(g_webviewBrowserFolder, NP2_COUNTOF(g_webviewBrowserFolder))) {
+			PreviewMode_Log(L"Fixed Version browser folder: %s", g_webviewBrowserFolder);
+			EnsureFixedVersionAppContainerAcls(g_webviewBrowserFolder);
+		} else {
+			g_webviewBrowserFolder[0] = L'\0';
+			PreviewMode_Log(L"Fixed Version browser folder: (none, using Evergreen)");
+		}
+	}
+	return g_webviewBrowserFolder[0] != L'\0' ? g_webviewBrowserFolder : nullptr;
 }
 
 HRESULT HandleNavigationStarting(ICoreWebView2 * /*sender*/, ICoreWebView2NavigationStartingEventArgs *args) {
@@ -1208,6 +1354,12 @@ void AttachWebViewHandlers() noexcept {
 		settings->put_AreDevToolsEnabled(FALSE);
 		settings->put_IsStatusBarEnabled(FALSE);
 		settings->put_IsZoomControlEnabled(FALSE);
+		// Disable SmartScreen so Fixed Version EULA Section 8 end-user notice is not required.
+		ComPtr<ICoreWebView2Settings8> settings8;
+		if (SUCCEEDED(settings.As(&settings8)) && settings8) {
+			const HRESULT smartHr = settings8->put_IsReputationCheckingRequired(FALSE);
+			PreviewMode_Log(L"put_IsReputationCheckingRequired(FALSE) hr=0x%08lX", smartHr);
+		}
 	}
 
 	if (!g_virtualHostMapped && g_previewAssetsDir[0] != L'\0' && PathFileExistsW(g_previewAssetsDir)) {
@@ -1363,9 +1515,11 @@ bool EnsureBrowser() noexcept {
 		g_webviewCreating = true;
 		CreateDirectoryW(g_webviewUserDataDir, nullptr);
 		SetPreviewWebViewEnvBackground();
-		PreviewMode_Log(L"EnsureBrowser: CreateCoreWebView2Environment userData=%s", g_webviewUserDataDir);
+		LPCWSTR browserFolder = GetResolvedBrowserExecutableFolder();
+		PreviewMode_Log(L"EnsureBrowser: CreateCoreWebView2Environment browser=%s userData=%s",
+			browserFolder ? browserFolder : L"(Evergreen)", g_webviewUserDataDir);
 		const HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
-			nullptr, g_webviewUserDataDir, nullptr,
+			browserFolder, g_webviewUserDataDir, nullptr,
 			Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
 				[](HRESULT result, ICoreWebView2Environment *env) -> HRESULT {
 					OnEnvironmentCreated(result, env);

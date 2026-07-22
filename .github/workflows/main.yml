@@ -34,11 +34,48 @@ jobs:
       run: |
         IF NOT EXIST "build\bin\Release\x64\Notepad.exe" EXIT /B 1
         IF NOT EXIST "build\bin\Release\x64\matepath.exe" EXIT /B 1
-        DIR /B "build\Notepad_i18n_x64_*.zip" >NUL 2>&1
+        DIR /B "build\Notepad_i18n_x64_v*.zip" >NUL 2>&1
         IF ERRORLEVEL 1 EXIT /B 1
 
     - uses: actions/upload-artifact@v4
       with:
         name: Notepad_x64
-        path: build/Notepad_i18n_x64_*.zip
+        path: build/Notepad_i18n_x64_v*.zip
         retention-days: 14
+        if-no-files-found: error
+
+    - name: Cache WebView2 Fixed Version cab
+      id: cache-wv2
+      uses: actions/cache@v4
+      with:
+        path: build/cache/webview2
+        key: webview2-fixed-131.0.2903.146-x64-057976af0d822ebba15774916610b261ac5eb97f429e4c5ae4f5e9a621731994
+
+    - name: Build with_WebView2 fat zip
+      shell: pwsh
+      env:
+        WEBVIEW2_FIXED_CAB_URL: ${{ vars.WEBVIEW2_FIXED_CAB_URL || secrets.WEBVIEW2_FIXED_CAB_URL }}
+      run: |
+        $cabName = 'Microsoft.WebView2.FixedVersionRuntime.131.0.2903.146.x64.cab'
+        $cacheCab = Join-Path 'build/cache/webview2' $cabName
+        $haveCab = Test-Path $cacheCab
+        $haveUrl = -not [string]::IsNullOrWhiteSpace($env:WEBVIEW2_FIXED_CAB_URL)
+        if (-not $haveCab -and -not $haveUrl) {
+          Write-Warning 'Skipping fat zip: set repository variable/secret WEBVIEW2_FIXED_CAB_URL to a Microsoft-acquired Fixed Version cab URL (see build/webview2-fixed-version.json).'
+          exit 0
+        }
+        if ($haveCab) {
+          $env:WEBVIEW2_FIXED_CAB = (Resolve-Path $cacheCab).Path
+        }
+        & powershell -NoProfile -ExecutionPolicy Bypass -File 'build/make_zip_webview2.ps1'
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        $fat = Get-ChildItem 'build/Notepad_i18n_x64_with_WebView2_*.zip' -ErrorAction SilentlyContinue
+        if (-not $fat) { throw 'Fat zip was not produced' }
+
+    - uses: actions/upload-artifact@v4
+      if: hashFiles('build/Notepad_i18n_x64_with_WebView2_*.zip') != ''
+      with:
+        name: Notepad_x64_with_WebView2
+        path: build/Notepad_i18n_x64_with_WebView2_*.zip
+        retention-days: 14
+        if-no-files-found: warn

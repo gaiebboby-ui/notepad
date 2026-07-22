@@ -24,6 +24,7 @@ Split editor view: source on top, live preview on bottom (**WebView2**).
 - **UI:** draggable splitter, double-click splitter or menu to maximize preview
 - **Zoom:** **Ctrl + mouse wheel** over the preview pane (50–250%, step 10%)
 - **Links:** `http`/`https` open in the **system browser** (preview never navigates away)
+- **Runtime:** system Evergreen by default; fat zip may ship Fixed Version under `WebView2\`
 - **Clipboard:** Ctrl+C / Ctrl+A work on preview selection (main accelerators skipped while preview has focus)
 - **Context menu:** Copy, Select All, Open Link, Copy Link
 - **Dark theme:** preview CSS follows application dark style theme
@@ -72,13 +73,14 @@ To reset toolbar layout after an upgrade, remove `ToolbarButtons` from `Notepad.
 - MSVC: `build\VisualStudio\build.bat Build x64 Release`
 - Locales: `locale\build.bat Build x64 Release` (MSBuild target **`Notepad4_zh-Hans_`** — do not rename to `Notepad_`)
 - Package: `build\make_zip.bat MSVC x64 Release Locale`
+- Fat (optional Fixed Version WebView2): `powershell -File build\make_zip_webview2.ps1` with pin `build/webview2-fixed-version.json` (**131.0.2903.146**)
 - MinGW: `src/md4c/*.c` linked from `build/mingw/notepad4.mk`
 - Toolbar bitmaps: `python tools/build_toolbar.py` (requires `cairosvg`, `Pillow`; see `tools/ImageTool.py`)
 
-GitHub Actions: `.github/workflows/main.yml` — single job **MSVC x64** on `windows-2022`, artifact **`Notepad_x64`** (`Notepad_i18n_x64_*.zip`).  
-AppVeyor: `appveyor.yml` — same x64 build (optional mirror).
+GitHub Actions: `.github/workflows/main.yml` — MSVC x64 on `windows-2022`, artifacts **`Notepad_x64`** and **`Notepad_x64_with_WebView2`** (fat when `WEBVIEW2_FIXED_CAB_URL` / cached cab is available).  
+AppVeyor: `appveyor.yml` — same x64 slim build (optional mirror).
 
-**CI must include** (commit before push): `PreviewMode.*`, `DarkMode.*`, `src/md4c/`, `third_party/webview2/`, `preview/mermaid.min.js`, `doc/Notepad DarkTheme.ini`, updated `res/Toolbar*.bmp`, `tools/images/Preview.svg`.
+**CI must include** (commit before push): `PreviewMode.*`, `DarkMode.*`, `src/md4c/`, `third_party/webview2/`, `preview/mermaid.min.js`, `doc/Notepad DarkTheme.ini`, updated `res/Toolbar*.bmp`, `tools/images/Preview.svg`, `build/webview2-fixed-version.json`, `build/make_zip_webview2.ps1`.
 
 ---
 

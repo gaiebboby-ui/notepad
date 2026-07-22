@@ -10,7 +10,12 @@ Syntax highlighting, code folding, auto-completion, and API lists cover many pro
 
 ## Binaries
 
-Latest **x64** builds for Windows 10/11 (MSVC Release, all locales) are published as the **`Notepad_x64`** artifact on [GitHub Actions](https://github.com/gaiebboby-ui/notepad/actions). Or build from source: [Build guide](doc/wiki/Build-Notepad.md).
+Latest **x64** builds for Windows 10/11 (MSVC Release, all locales) are published as GitHub Actions artifacts on [Actions](https://github.com/gaiebboby-ui/notepad/actions):
+
+- **`Notepad_x64`** — slim zip (system Evergreen WebView2)
+- **`Notepad_x64_with_WebView2`** — portable zip with Fixed Version Runtime **131.x** (when the Microsoft cab is available to CI)
+
+Or build from source: [Build guide](doc/wiki/Build-Notepad.md).
 
 [![CI](https://github.com/gaiebboby-ui/notepad/actions/workflows/main.yml/badge.svg)](https://github.com/gaiebboby-ui/notepad/actions/workflows/main.yml)
 
@@ -23,7 +28,7 @@ Latest **x64** builds for Windows 10/11 (MSVC Release, all locales) are publishe
 * **[Preview Mode](doc/Preview-Mode.md)** — split view with live preview for Markdown (GFM / md4c + Mermaid), HTML, XML, and CSV via WebView2; Ctrl+wheel zoom; http(s) links open in the system browser; [MD++ markup reference](doc/MD++-markup.md)
 * **Dark theme** — `Notepad DarkTheme.ini` and shell dark mode (`DarkMode` module)
 * **Toolbar** — larger default buttons (+20% scale); Preview Mode button with dedicated icon (before Close)
-* **Build / CI** — documented in [doc/wiki/](doc/wiki/); release zips named `Notepad_*.zip`
+* **Build / CI** — documented in [doc/wiki/](doc/wiki/); release zips `Notepad_x64` and optional `Notepad_x64_with_WebView2`
 
 ## Changes compared to [Notepad2](https://www.flos-freeware.ch/notepad2.html) or [Notepad2-mod](https://xhmikosr.github.io/notepad2-mod/):
 

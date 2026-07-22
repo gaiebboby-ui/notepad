@@ -1,0 +1,8 @@
+{
+  "version": "131.0.2903.146",
+  "arch": "x64",
+  "cab": "Microsoft.WebView2.FixedVersionRuntime.131.0.2903.146.x64.cab",
+  "sha256": "057976af0d822ebba15774916610b261ac5eb97f429e4c5ae4f5e9a621731994",
+  "url": "",
+  "notes": "Pinned to match vendored WebView2 SDK 1.0.2903.40 (Win10 19041/19044 compatibility). Acquire the cab directly from Microsoft (historical Fixed Version download or Microsoft CDN). Set url to that Microsoft URL, or supply WEBVIEW2_FIXED_CAB / WEBVIEW2_FIXED_CAB_URL (CI: repository variable WEBVIEW2_FIXED_CAB_URL). Do not commit the cab to git."
+}

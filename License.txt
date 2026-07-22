@@ -272,3 +272,50 @@ SHALL THE COPYRIGHT HOLDERS OR ANYONE DISTRIBUTING THE SOFTWARE BE LIABLE
 FOR ANY DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
+
+
+================================================================================
+
+Microsoft Edge WebView2 SDK
+
+https://www.nuget.org/packages/Microsoft.Web.WebView2
+https://developer.microsoft.com/microsoft-edge/webview2/
+
+This application links headers and WebView2LoaderStatic.lib from NuGet package
+Microsoft.Web.WebView2 version 1.0.2903.40 (vendored under third_party/webview2/).
+Use of the SDK is subject to the Microsoft software license terms accompanying
+that package.
+
+
+================================================================================
+
+Microsoft Edge WebView2 Runtime (Fixed Version)
+
+https://developer.microsoft.com/microsoft-edge/webview2/
+https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution
+
+The optional portable build "with_WebView2" redistributes Microsoft Edge
+WebView2 Runtime Fixed Version 131.0.2903.146 (x64) inside the application
+folder WebView2\. The slim build does not include the Runtime and relies on
+the system Evergreen WebView2 Runtime instead.
+
+The Fixed Version package is acquired directly from Microsoft and shipped
+unmodified, including Microsoft license files and ThirdPartyNotices (and
+show_third_party_software_licenses.bat when present) inside WebView2\.
+Do not redistribute that Runtime as a stand-alone offering.
+
+Microsoft Defender SmartScreen reputation checking is disabled for Preview
+Mode via WebView2 settings (IsReputationCheckingRequired = false). The Fixed
+Version Runtime may still collect diagnostic information as described in
+Microsoft's Privacy Statement: https://aka.ms/privacy
+
+H.264/AVC video standard notice (from the Fixed Version license terms):
+
+THIS PRODUCT IS LICENSED UNDER THE AVC PATENT PORTFOLIO LICENSE FOR THE
+PERSONAL AND NON-COMMERCIAL USE OF A CONSUMER TO (i) ENCODE VIDEO IN
+COMPLIANCE WITH THE AVC STANDARD ("AVC VIDEO") AND/OR (ii) DECODE AVC VIDEO
+THAT WAS ENCODED BY A CONSUMER ENGAGED IN A PERSONAL AND NON-COMMERCIAL
+ACTIVITY AND/OR WAS OBTAINED FROM A VIDEO PROVIDER LICENSED TO PROVIDE AVC
+VIDEO. NO LICENSE IS GRANTED OR SHALL BE IMPLIED FOR ANY OTHER USE.
+ADDITIONAL INFORMATION MAY BE OBTAINED FROM MPEG LA LLC. SEE
+HTTPS://WWW.MPEGLA.COM.
