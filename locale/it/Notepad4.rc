@@ -243,6 +243,23 @@ BEGIN
 			MENUITEM "Triplo &apostrofo\tCtrl+3",	CMD_ENCLOSE_TRIPLE_SQ
 			MENUITEM "Triple &virgolette\tCtrl+6",	CMD_ENCLOSE_TRIPLE_DQ
 			MENUITEM "Triplo &backticks\tCtrl+9",		CMD_ENCLOSE_TRIPLE_BT
+			MENUITEM SEPARATOR
+			MENUITEM "Markdown &Bold",					IDT_MD_BOLD
+			MENUITEM "Markdown &Italic",				IDT_MD_ITALIC
+			MENUITEM "Markdown Stri&kethrough",			IDT_MD_STRIKETHROUGH
+			MENUITEM "Markdown &Code",					IDT_MD_CODE
+			MENUITEM "Markdown Code &Block",			IDT_MD_CODEBLOCK
+			MENUITEM "Markdown &Link",					IDT_MD_LINK
+			MENUITEM "Markdown I&mage",					IDT_MD_IMAGE
+			MENUITEM "Markdown &Quote",					IDT_MD_QUOTE
+			MENUITEM "Markdown &Horizontal Rule",		IDT_MD_HR
+			MENUITEM "Markdown Heading &1",				IDM_EDIT_MD_H1
+			MENUITEM "Markdown Heading &2",				IDM_EDIT_MD_H2
+			MENUITEM "Markdown Heading &3",				IDM_EDIT_MD_H3
+			MENUITEM "Markdown Heading &4",				IDM_EDIT_MD_H4
+			MENUITEM "Markdown &Unordered List",		IDM_EDIT_MD_UL
+			MENUITEM "Markdown &Ordered List",			IDM_EDIT_MD_OL
+			MENUITEM "Markdown &Task List",				IDM_EDIT_MD_TASK
 		END
 		POPUP "&Linee"
 		BEGIN
@@ -844,6 +861,19 @@ BEGIN
 		MENUITEM "Livello &9",					IDM_VIEW_FOLD_LEVEL9
 		MENUITEM "Livello 1&0",					IDM_VIEW_FOLD_LEVEL10
 	END
+	POPUP "+"
+	BEGIN
+		MENUITEM "Heading &1 — #",				IDM_EDIT_MD_H1
+		MENUITEM "Heading &2 — ##",				IDM_EDIT_MD_H2
+		MENUITEM "Heading &3 — ###",			IDM_EDIT_MD_H3
+		MENUITEM "Heading &4 — ####",			IDM_EDIT_MD_H4
+	END
+	POPUP "+"
+	BEGIN
+		MENUITEM "&Unordered List",				IDM_EDIT_MD_UL
+		MENUITEM "&Ordered List",					IDM_EDIT_MD_OL
+		MENUITEM "&Task List",						IDM_EDIT_MD_TASK
+	END
 END
 
 
@@ -854,6 +884,10 @@ END
 
 IDR_MAINWND ACCELERATORS
 BEGIN
+    // Reserved for Markdown Bold/Italic — enable later after resolving
+    // Ctrl+Shift+B / Ctrl+Shift+I conflicts:
+    // "B",            IDT_MD_BOLD,               VIRTKEY, SHIFT, CONTROL, NOINVERT
+    // "I",            IDT_MD_ITALIC,             VIRTKEY, SHIFT, CONTROL, NOINVERT
     "0",            IDM_VIEW_TRANSPARENT,       VIRTKEY, CONTROL, NOINVERT
     "0",            IDM_FILE_NEWWINDOW2,        VIRTKEY, ALT, NOINVERT
     "0",            IDM_VIEW_WORDWRAPSYMBOLS,   VIRTKEY, SHIFT, CONTROL, NOINVERT
@@ -1824,6 +1858,17 @@ BEGIN
     IDT_FILE_LAUNCH         "Esegui documento"
     IDT_VIEW_ALWAYSONTOP    "Sempre in cima"
     IDT_FILE_NEWWINDOW      "Nuova finestra"
+    IDT_MD_BOLD             "Markdown Bold"
+    IDT_MD_ITALIC           "Markdown Italic"
+    IDT_MD_STRIKETHROUGH    "Markdown Strikethrough"
+    IDT_MD_CODE             "Markdown Code"
+    IDT_MD_CODEBLOCK        "Markdown Code Block"
+    IDT_MD_HEADING          "Markdown Heading"
+    IDT_MD_LIST             "Markdown List"
+    IDT_MD_LINK             "Markdown Link"
+    IDT_MD_IMAGE            "Markdown Image"
+    IDT_MD_QUOTE            "Markdown Quote"
+    IDT_MD_HR               "Markdown Horizontal Rule"
 END
 
 STRINGTABLE

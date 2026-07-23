@@ -3383,6 +3383,66 @@ void EditEncloseSelection(LPCWSTR pwszOpen, LPCWSTR pwszClose) noexcept {
 
 //=============================================================================
 //
+// EditApplyMarkdownFormat()
+//
+void EditApplyMarkdownFormat(UINT cmd) noexcept {
+	switch (cmd) {
+	case IDT_MD_BOLD:
+		EditEncloseSelection(L"**", L"**");
+		break;
+	case IDT_MD_ITALIC:
+		EditEncloseSelection(L"*", L"*");
+		break;
+	case IDT_MD_STRIKETHROUGH:
+		EditEncloseSelection(L"~~", L"~~");
+		break;
+	case IDT_MD_CODE:
+		EditEncloseSelection(L"`", L"`");
+		break;
+	case IDT_MD_LINK:
+		// Selected text = URL (same model as Image)
+		EditEncloseSelection(L"[](", L")");
+		break;
+	case IDT_MD_IMAGE:
+		EditEncloseSelection(L"![alt](", L")");
+		break;
+	case IDT_MD_CODEBLOCK:
+		EditEncloseSelection(L"```\n", L"\n```");
+		break;
+	case IDT_MD_QUOTE:
+		EditModifyLines(L"> ", L"", false);
+		break;
+	case IDT_MD_HR:
+		EditEncloseSelection(L"\n---\n", L"");
+		break;
+	case IDM_EDIT_MD_H1:
+		EditModifyLines(L"# ", L"", false);
+		break;
+	case IDM_EDIT_MD_H2:
+		EditModifyLines(L"## ", L"", false);
+		break;
+	case IDM_EDIT_MD_H3:
+		EditModifyLines(L"### ", L"", false);
+		break;
+	case IDM_EDIT_MD_H4:
+		EditModifyLines(L"#### ", L"", false);
+		break;
+	case IDM_EDIT_MD_UL:
+		EditModifyLines(L"- ", L"", false);
+		break;
+	case IDM_EDIT_MD_OL:
+		EditModifyLines(L"1. ", L"", false);
+		break;
+	case IDM_EDIT_MD_TASK:
+		EditModifyLines(L"- [ ] ", L"", false);
+		break;
+	default:
+		break;
+	}
+}
+
+//=============================================================================
+//
 // EditToggleLineComments()
 //
 void EditToggleLineComments(LPCWSTR pwszComment, int commentFlag) noexcept {

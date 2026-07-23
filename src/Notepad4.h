@@ -97,6 +97,8 @@ struct NP2PARAMS {
 #define IDP_POPUP_SUBMENU_BAR	1
 #define IDP_POPUP_SUBMENU_TRAY	2
 #define IDP_POPUP_SUBMENU_FOLD	3
+#define IDP_POPUP_SUBMENU_MD_HEADING	4
+#define IDP_POPUP_SUBMENU_MD_LIST	5
 
 //==== Statusbar ==============================================================
 enum {

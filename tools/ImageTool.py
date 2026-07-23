@@ -267,6 +267,17 @@ def make_notepad4_toolbar_bitmap(size):
 		f'{images}/NewWindow.png',		# IDT_FILE_NEWWINDOW
 		f'{images}/Preview.png',		# IDT_VIEW_PREVIEW
 		f'{images}/PreviewMaximize.png',	# IDT_VIEW_PREVIEW_MAXIMIZE
+		f'{images}/MdBold.png',			# IDT_MD_BOLD
+		f'{images}/MdItalic.png',		# IDT_MD_ITALIC
+		f'{images}/MdStrikethrough.png',	# IDT_MD_STRIKETHROUGH
+		f'{images}/MdCode.png',			# IDT_MD_CODE
+		f'{images}/MdCodeBlock.png',	# IDT_MD_CODEBLOCK
+		f'{images}/MdHeading.png',		# IDT_MD_HEADING
+		f'{images}/MdList.png',			# IDT_MD_LIST
+		f'{images}/MdLink.png',			# IDT_MD_LINK
+		f'{images}/MdImage.png',		# IDT_MD_IMAGE
+		f'{images}/MdQuote.png',		# IDT_MD_QUOTE
+		f'{images}/MdHr.png',			# IDT_MD_HR
 	], f'Toolbar{size}.bmp')
 
 def make_all_notepad4_toolbar_bitmap():

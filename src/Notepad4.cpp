@@ -69,7 +69,8 @@ static HICON hTrayIcon = nullptr;
 static UINT uTrayIconDPI = 0;
 
 #define TOOLBAR_COMMAND_BASE	IDT_FILE_NEW
-#define DefaultToolbarButtons	L"22 3 0 1 27 2 0 4 18 19 0 5 6 0 7 8 9 20 0 10 11 0 12 0 24 0 13 14 0 15 16 0 28 29 17"
+// Indices must match idCommand - IDT_FILE_NEW + 1; separators always encode as 0.
+#define DefaultToolbarButtons	L"22 3 0 1 27 2 0 4 18 19 0 5 6 0 7 8 9 20 0 10 11 0 12 0 24 0 13 14 0 15 16 0 28 29 17 0 0 30 31 32 33 34 35 36 0 37 38 39 40"
 static TBBUTTON tbbMainWnd[] = {
 	{0, 	0, 					0, 				 TBSTYLE_SEP, {0}, 0, 0},
 	{0, 	IDT_FILE_NEW, 		TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
@@ -101,6 +102,17 @@ static TBBUTTON tbbMainWnd[] = {
 	{26, 	IDT_FILE_NEWWINDOW, 	TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
 	{27, 	IDT_VIEW_PREVIEW, 	TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
 	{28, 	IDT_VIEW_PREVIEW_MAXIMIZE, 	TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
+	{29, 	IDT_MD_BOLD, 		TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
+	{30, 	IDT_MD_ITALIC, 		TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
+	{31, 	IDT_MD_STRIKETHROUGH, 	TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
+	{32, 	IDT_MD_CODE, 		TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
+	{33, 	IDT_MD_CODEBLOCK, 	TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
+	{34, 	IDT_MD_HEADING, 	TBSTATE_ENABLED, BTNS_WHOLEDROPDOWN, {0}, 0, 0},
+	{35, 	IDT_MD_LIST, 		TBSTATE_ENABLED, BTNS_WHOLEDROPDOWN, {0}, 0, 0},
+	{36, 	IDT_MD_LINK, 		TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
+	{37, 	IDT_MD_IMAGE, 		TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
+	{38, 	IDT_MD_QUOTE, 		TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
+	{39, 	IDT_MD_HR, 			TBSTATE_ENABLED, TBSTYLE_BUTTON, {0}, 0, 0},
 };
 
 WCHAR	szIniFile[MAX_PATH];
@@ -4689,6 +4701,25 @@ LRESULT MsgCommand(HWND hwnd, WPARAM wParam, LPARAM lParam) {
 		EditEncloseSelection(L"```", L"```");
 		break;
 
+	case IDT_MD_BOLD:
+	case IDT_MD_ITALIC:
+	case IDT_MD_STRIKETHROUGH:
+	case IDT_MD_CODE:
+	case IDT_MD_CODEBLOCK:
+	case IDT_MD_LINK:
+	case IDT_MD_IMAGE:
+	case IDT_MD_QUOTE:
+	case IDT_MD_HR:
+	case IDM_EDIT_MD_H1:
+	case IDM_EDIT_MD_H2:
+	case IDM_EDIT_MD_H3:
+	case IDM_EDIT_MD_H4:
+	case IDM_EDIT_MD_UL:
+	case IDM_EDIT_MD_OL:
+	case IDM_EDIT_MD_TASK:
+		EditApplyMarkdownFormat(LOWORD(wParam));
+		break;
+
 	case CMD_INCREASENUM:
 	case CMD_DECREASENUM:
 		EditModifyNumber(LOWORD(wParam) == CMD_INCREASENUM);
@@ -5093,6 +5124,7 @@ LRESULT MsgNotify(HWND hwnd, WPARAM wParam, LPARAM lParam) {
 			LPTBNOTIFY lpTbNotify = AsPointer<LPTBNOTIFY>(lParam);
 			HMENU hmenu = nullptr;
 			HMENU subMenu = nullptr;
+			int popupIndex = IDP_POPUP_SUBMENU_FOLD;
 			if (lpTbNotify->iItem == IDT_FILE_OPEN) {
 				static_assert(IDM_RECENT_HISTORY_START + MRU_MAXITEMS == IDM_RECENT_HISTORY_END);
 				if (mruFile.iSize <= 0) {
@@ -5113,8 +5145,13 @@ LRESULT MsgNotify(HWND hwnd, WPARAM wParam, LPARAM lParam) {
 					InsertMenuItem(subMenu, i, TRUE, &mii);
 				}
 			} else {
+				if (lpTbNotify->iItem == IDT_MD_HEADING) {
+					popupIndex = IDP_POPUP_SUBMENU_MD_HEADING;
+				} else if (lpTbNotify->iItem == IDT_MD_LIST) {
+					popupIndex = IDP_POPUP_SUBMENU_MD_LIST;
+				}
 				hmenu = LoadMenu(g_hInstance, MAKEINTRESOURCE(IDR_POPUPMENU));
-				subMenu = GetSubMenu(hmenu, IDP_POPUP_SUBMENU_FOLD);
+				subMenu = GetSubMenu(hmenu, popupIndex);
 			}
 			TPMPARAMS tpm;
 			tpm.cbSize = sizeof(TPMPARAMS);
@@ -6591,6 +6628,19 @@ void UpdateToolbar() noexcept {
 		CheckTool(IDT_VIEW_PREVIEW, PreviewMode_IsSplitActive());
 		EnableTool(IDT_VIEW_PREVIEW_MAXIMIZE, previewSupported);
 		CheckTool(IDT_VIEW_PREVIEW_MAXIMIZE, PreviewMode_IsActive() && PreviewMode_IsMaximized());
+
+		const bool markdownLexer = pLexCurrent != nullptr && pLexCurrent->rid == NP2LEX_MARKDOWN;
+		EnableTool(IDT_MD_BOLD, markdownLexer);
+		EnableTool(IDT_MD_ITALIC, markdownLexer);
+		EnableTool(IDT_MD_STRIKETHROUGH, markdownLexer);
+		EnableTool(IDT_MD_CODE, markdownLexer);
+		EnableTool(IDT_MD_CODEBLOCK, markdownLexer);
+		EnableTool(IDT_MD_HEADING, markdownLexer);
+		EnableTool(IDT_MD_LIST, markdownLexer);
+		EnableTool(IDT_MD_LINK, markdownLexer);
+		EnableTool(IDT_MD_IMAGE, markdownLexer);
+		EnableTool(IDT_MD_QUOTE, markdownLexer);
+		EnableTool(IDT_MD_HR, markdownLexer);
 	}
 	CheckTool(IDT_VIEW_ALWAYSONTOP, IsTopMost());
 }

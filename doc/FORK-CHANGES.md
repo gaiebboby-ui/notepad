@@ -62,7 +62,12 @@ Split editor view: source on top, live preview on bottom (**WebView2**).
 
 - Default UI scale increased by **20%**: `NP2_TOOLBAR_UI_SCALE_PERCENT` = **173** (was 144) in `src/config.h`
 - Preview toolbar button uses dedicated bitmap index (see `tools/images/Preview.svg`)
-- Default button order ends with: `… Scheme, Scheme Config | Preview | Close`
+- Default button order ends with: `… Scheme, Scheme Config | Preview | Maximize Preview | Exit | [wide gap] | Markdown format group`
+- **Markdown format toolbar** (enabled for Markdown lexer only): Bold, Italic, Strikethrough, Code, Code Block, Heading▾, List▾, Link, Image, Quote, HR — after Exit with a wide separator gap
+- Link and Image both treat the selection as the URL (`[](sel)` / `![alt](sel)`)
+- Insert/wrap via `EditApplyMarkdownFormat()` → `EditEncloseSelection` / `EditModifyLines` (editor caret/selection only; Preview refreshes after buffer change)
+- Dark toolbar: light `COLORSCHEME` button edges so icons stay visible
+- Accelerators for Bold/Italic are reserved as commented stubs in `IDR_MAINWND` (Ctrl+Shift+B/I conflict with existing commands)
 
 To reset toolbar layout after an upgrade, remove `ToolbarButtons` from `Notepad.ini` or use **View → Customize Toolbar**.
 

@@ -817,6 +817,24 @@
 #define IDT_FILE_NEWWINDOW				40626
 #define IDT_VIEW_PREVIEW				40627
 #define IDT_VIEW_PREVIEW_MAXIMIZE		40628
+#define IDT_MD_BOLD						40629
+#define IDT_MD_ITALIC					40630
+#define IDT_MD_STRIKETHROUGH			40631
+#define IDT_MD_CODE						40632
+#define IDT_MD_CODEBLOCK				40633
+#define IDT_MD_HEADING					40634
+#define IDT_MD_LIST						40635
+#define IDT_MD_LINK						40636
+#define IDT_MD_IMAGE					40637
+#define IDT_MD_QUOTE					40638
+#define IDT_MD_HR						40639
+#define IDM_EDIT_MD_H1					40640
+#define IDM_EDIT_MD_H2					40641
+#define IDM_EDIT_MD_H3					40642
+#define IDM_EDIT_MD_H4					40643
+#define IDM_EDIT_MD_UL					40644
+#define IDM_EDIT_MD_OL					40645
+#define IDM_EDIT_MD_TASK				40646
 
 #define IDM_LANG_USER_DEFAULT			40650
 #define IDM_LANG_ENGLISH_US				40651

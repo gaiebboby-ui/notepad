@@ -20,7 +20,13 @@ def render_preview_pngs() -> None:
 	if cairosvg is None:
 		print('cairosvg not installed; skip Preview.png regeneration')
 		return
-	for name in ('Preview', 'PreviewMaximize'):
+	names = (
+		'Preview', 'PreviewMaximize',
+		'MdBold', 'MdItalic', 'MdStrikethrough', 'MdCode',
+		'MdHeading', 'MdList', 'MdLink', 'MdImage', 'MdQuote', 'MdHr',
+		'MdCodeBlock',
+	)
+	for name in names:
 		svg_path = os.path.join(TOOLS, 'images', f'{name}.svg')
 		if not os.path.isfile(svg_path):
 			raise FileNotFoundError(svg_path)
